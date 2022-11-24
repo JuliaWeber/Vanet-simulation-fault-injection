@@ -21,7 +21,6 @@ struct CellState {
     id: usize,                         // unique id
     is_street: bool,                   // Is this cell a street?
     obu_id: Option<u32>,               // If this cell is occupied by an OBU, what is its ID?
-    rsu_id: Option<u32>,               // If this cell has an RSU, what is its ID?
     next_coordinates: Vec<Coordinate>, // If this cell is a street, what are the next possible coordinates?
 }
 
@@ -54,7 +53,6 @@ impl Grid {
                     id,
                     is_street,
                     obu_id: None,
-                    rsu_id: None,
                     next_coordinates: Vec::new(),
                 });
                 // increment the id counter
@@ -78,21 +76,21 @@ impl Grid {
     }
 
     /**
-     * When the row and column of a coordinate are both streets, the coordinate is
-     * a crossing.
-     */
-    fn is_crossing(&self, coordinate: Coordinate) -> bool {
-        self.is_street(coordinate.x) && self.is_street(coordinate.y)
-    }
-
-    /**
      * Get flow direction for a given street id.
      */
-    fn get_flow_direction(&self, street_id: usize) -> FlowDirection {
+    fn get_flow_direction(&self, street_id: usize, is_column: bool) -> FlowDirection {
         if street_id % 2 == 0 {
-            FlowDirection::FromZero
+            if is_column {
+                FlowDirection::ToZero
+            } else {
+                FlowDirection::FromZero
+            }
         } else {
-            FlowDirection::ToZero
+            if is_column {
+                FlowDirection::FromZero
+            } else {
+                FlowDirection::ToZero
+            }
         }
     }
 
@@ -118,9 +116,9 @@ impl Grid {
     fn calculate_next_coordinates(&self, coordinate: Coordinate) -> Vec<Coordinate> {
         let mut next_coordinates = Vec::new();
 
-        // check if row is a street
+        // check if column is a street
         if self.is_street(coordinate.x) {
-            match self.get_flow_direction(coordinate.x) {
+            match self.get_flow_direction(coordinate.x, true) {
                 FlowDirection::FromZero => {
                     // check if there is at least one cell ahead
                     if coordinate.y < self.dimension - 1 {
@@ -142,9 +140,9 @@ impl Grid {
             }
         }
 
-        // check if column is a street
+        // check if row is a street
         if self.is_street(coordinate.y) {
-            match self.get_flow_direction(coordinate.y) {
+            match self.get_flow_direction(coordinate.y, false) {
                 FlowDirection::FromZero => {
                     // check if there is at least one cell ahead
                     if coordinate.x < self.dimension - 1 {
@@ -242,6 +240,56 @@ impl Grid {
             println!("({},{})", coordinate.x, coordinate.y);
         }
     }
+
+    /**
+     * Insert a new obu in the grid. Choose first street with first cell available,
+     * considering the flow direction.
+     */
+    pub fn insert_obu(&mut self, obu_id: u32) -> Option<Coordinate> {
+        let mut street_id = 0;
+
+        // iterate over the streets
+        while street_id < self.dimension {
+            // if this id is a street (row/column)
+            if self.is_street(street_id) {
+                // check column first
+                let start = match self.get_flow_direction(street_id, true) {
+                    FlowDirection::FromZero => 0,
+                    FlowDirection::ToZero => self.dimension - 1,
+                };
+
+                // check if cell is empty
+                if self.cells[street_id][start].obu_id.is_none() {
+                    // insert obu
+                    self.cells[street_id][start].obu_id = Some(obu_id);
+                    return Some(Coordinate {
+                        x: street_id,
+                        y: start,
+                    });
+                }
+
+                // then check row
+                let start = match self.get_flow_direction(street_id, false) {
+                    FlowDirection::FromZero => 0,
+                    FlowDirection::ToZero => self.dimension - 1,
+                };
+
+                // check if cell is empty
+                if self.cells[start][street_id].obu_id.is_none() {
+                    // insert obu
+                    self.cells[start][street_id].obu_id = Some(obu_id);
+                    return Some(Coordinate {
+                        x: start,
+                        y: street_id,
+                    });
+                }
+            }
+
+            street_id += self.block_size + 1;
+        }
+
+        None
+    }
 }
 
 /***
@@ -250,6 +298,7 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use crate::grid::{Coordinate, FlowDirection, Grid};
+    use crate::obu::OnBoardUnit;
 
     /**
      * Test grid creation
@@ -307,45 +356,23 @@ mod tests {
     }
 
     /**
-     * Test crossing identification
-     */
-    #[test]
-    fn test_crossing_identification() {
-        let grid = Grid::new(3, 2);
-
-        // check if (0,0) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 0, y: 0 }), true);
-
-        // check if (0,3) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 0, y: 3 }), true);
-
-        // check if (3,0) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 3, y: 0 }), true);
-
-        // check if (3,3) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 3, y: 3 }), true);
-
-        // check if (1,1) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 1, y: 1 }), false);
-
-        // check if (0,1) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 0, y: 1 }), false);
-
-        // check if (3,1) is a crossing
-        assert_eq!(grid.is_crossing(Coordinate { x: 3, y: 1 }), false);
-    }
-
-    /**
      * Test flow direction
      */
     #[test]
     fn test_flow_direction() {
         let grid = Grid::new(3, 2);
 
-        assert_eq!(grid.get_flow_direction(0), FlowDirection::FromZero);
-        assert_eq!(grid.get_flow_direction(3), FlowDirection::ToZero);
-        assert_eq!(grid.get_flow_direction(6), FlowDirection::FromZero);
-        assert_eq!(grid.get_flow_direction(9), FlowDirection::ToZero);
+        assert_eq!(grid.get_flow_direction(0, false), FlowDirection::FromZero);
+        assert_eq!(grid.get_flow_direction(0, true), FlowDirection::ToZero);
+
+        assert_eq!(grid.get_flow_direction(3, false), FlowDirection::ToZero);
+        assert_eq!(grid.get_flow_direction(3, true), FlowDirection::FromZero);
+
+        assert_eq!(grid.get_flow_direction(6, false), FlowDirection::FromZero);
+        assert_eq!(grid.get_flow_direction(6, true), FlowDirection::ToZero);
+
+        assert_eq!(grid.get_flow_direction(9, false), FlowDirection::ToZero);
+        assert_eq!(grid.get_flow_direction(9, true), FlowDirection::FromZero);
     }
 
     /**
@@ -357,69 +384,73 @@ mod tests {
 
         // from 0,0
         let next_coordinates = grid.calculate_next_coordinates(Coordinate { x: 0, y: 0 });
-        assert_eq!(next_coordinates.len(), 2);
-        assert_eq!(next_coordinates[0].x, 0);
-        assert_eq!(next_coordinates[0].y, 1);
-        assert_eq!(next_coordinates[1].x, 1);
-        assert_eq!(next_coordinates[1].y, 0);
+        assert_eq!(next_coordinates.len(), 1);
+        assert_eq!(next_coordinates[0].x, 1);
+        assert_eq!(next_coordinates[0].y, 0);
 
         // from 3,6
         let next_coordinates = grid.calculate_next_coordinates(Coordinate { x: 3, y: 6 });
         assert_eq!(next_coordinates.len(), 2);
         assert_eq!(next_coordinates[0].x, 3);
-        assert_eq!(next_coordinates[0].y, 5);
+        assert_eq!(next_coordinates[0].y, 7);
         assert_eq!(next_coordinates[1].x, 4);
         assert_eq!(next_coordinates[1].y, 6);
 
         // from 6,9
         let next_coordinates = grid.calculate_next_coordinates(Coordinate { x: 6, y: 9 });
-        assert_eq!(next_coordinates.len(), 1);
-        assert_eq!(next_coordinates[0].x, 5);
-        assert_eq!(next_coordinates[0].y, 9);
+        assert_eq!(next_coordinates.len(), 2);
+        assert_eq!(next_coordinates[0].x, 6);
+        assert_eq!(next_coordinates[0].y, 8);
+        assert_eq!(next_coordinates[1].x, 5);
+        assert_eq!(next_coordinates[1].y, 9);
 
         // from 3,0
         let next_coordinates = grid.calculate_next_coordinates(Coordinate { x: 3, y: 0 });
-        assert_eq!(next_coordinates.len(), 1);
-        assert_eq!(next_coordinates[0].x, 4);
-        assert_eq!(next_coordinates[0].y, 0);
+        assert_eq!(next_coordinates.len(), 2);
+        assert_eq!(next_coordinates[0].x, 3);
+        assert_eq!(next_coordinates[0].y, 1);
+        assert_eq!(next_coordinates[1].x, 4);
+        assert_eq!(next_coordinates[1].y, 0);
     }
 
     /**
-     * Test next calculated and stored coordinates
+     * Test stored next coordinates
      */
     #[test]
-    fn test_next_calculated_and_stored_coordinates() {
+    fn test_stored_next_coordinates() {
         let mut grid = Grid::new(3, 2);
 
         grid.update_next_coordinates();
 
         // from 0,0
         let next_coordinates = &grid.cells[0][0].next_coordinates;
-        assert_eq!(next_coordinates.len(), 2);
-        assert_eq!(next_coordinates[0].x, 0);
-        assert_eq!(next_coordinates[0].y, 1);
-        assert_eq!(next_coordinates[1].x, 1);
-        assert_eq!(next_coordinates[1].y, 0);
+        assert_eq!(next_coordinates.len(), 1);
+        assert_eq!(next_coordinates[0].x, 1);
+        assert_eq!(next_coordinates[0].y, 0);
 
         // from 3,6
         let next_coordinates = &grid.cells[3][6].next_coordinates;
         assert_eq!(next_coordinates.len(), 2);
         assert_eq!(next_coordinates[0].x, 3);
-        assert_eq!(next_coordinates[0].y, 5);
+        assert_eq!(next_coordinates[0].y, 7);
         assert_eq!(next_coordinates[1].x, 4);
         assert_eq!(next_coordinates[1].y, 6);
 
         // from 6,9
         let next_coordinates = &grid.cells[6][9].next_coordinates;
-        assert_eq!(next_coordinates.len(), 1);
-        assert_eq!(next_coordinates[0].x, 5);
-        assert_eq!(next_coordinates[0].y, 9);
+        assert_eq!(next_coordinates.len(), 2);
+        assert_eq!(next_coordinates[0].x, 6);
+        assert_eq!(next_coordinates[0].y, 8);
+        assert_eq!(next_coordinates[1].x, 5);
+        assert_eq!(next_coordinates[1].y, 9);
 
         // from 3,0
         let next_coordinates = &grid.cells[3][0].next_coordinates;
-        assert_eq!(next_coordinates.len(), 1);
-        assert_eq!(next_coordinates[0].x, 4);
-        assert_eq!(next_coordinates[0].y, 0);
+        assert_eq!(next_coordinates.len(), 2);
+        assert_eq!(next_coordinates[0].x, 3);
+        assert_eq!(next_coordinates[0].y, 1);
+        assert_eq!(next_coordinates[1].x, 4);
+        assert_eq!(next_coordinates[1].y, 0);
     }
 
     /**
@@ -431,30 +462,96 @@ mod tests {
 
         // from 0,0
         let next_coordinates = grid.get_next_coordinates(Coordinate { x: 0, y: 0 });
-        assert_eq!(next_coordinates.len(), 2);
-        assert_eq!(next_coordinates[0].x, 0);
-        assert_eq!(next_coordinates[0].y, 1);
-        assert_eq!(next_coordinates[1].x, 1);
-        assert_eq!(next_coordinates[1].y, 0);
+        assert_eq!(next_coordinates.len(), 1);
+        assert_eq!(next_coordinates[0].x, 1);
+        assert_eq!(next_coordinates[0].y, 0);
 
         // from 3,6
         let next_coordinates = grid.get_next_coordinates(Coordinate { x: 3, y: 6 });
         assert_eq!(next_coordinates.len(), 2);
         assert_eq!(next_coordinates[0].x, 3);
-        assert_eq!(next_coordinates[0].y, 5);
+        assert_eq!(next_coordinates[0].y, 7);
         assert_eq!(next_coordinates[1].x, 4);
         assert_eq!(next_coordinates[1].y, 6);
 
         // from 6,9
         let next_coordinates = grid.get_next_coordinates(Coordinate { x: 6, y: 9 });
-        assert_eq!(next_coordinates.len(), 1);
-        assert_eq!(next_coordinates[0].x, 5);
-        assert_eq!(next_coordinates[0].y, 9);
+        assert_eq!(next_coordinates.len(), 2);
+        assert_eq!(next_coordinates[0].x, 6);
+        assert_eq!(next_coordinates[0].y, 8);
+        assert_eq!(next_coordinates[1].x, 5);
+        assert_eq!(next_coordinates[1].y, 9);
 
         // from 3,0
         let next_coordinates = grid.get_next_coordinates(Coordinate { x: 3, y: 0 });
-        assert_eq!(next_coordinates.len(), 1);
-        assert_eq!(next_coordinates[0].x, 4);
-        assert_eq!(next_coordinates[0].y, 0);
+        assert_eq!(next_coordinates.len(), 2);
+        assert_eq!(next_coordinates[0].x, 3);
+        assert_eq!(next_coordinates[0].y, 1);
+        assert_eq!(next_coordinates[1].x, 4);
+        assert_eq!(next_coordinates[1].y, 0);
+    }
+
+    /**
+     * Test obu insertion
+     */
+    #[test]
+    fn test_obu_insertion() {
+        let mut grid = Grid::new(3, 2);
+
+        let mut obus = Vec::new();
+        let mut obu_id = 0;
+
+        // insert first 7 OnBoardUnits
+        for _i in 0..8 {
+            match grid.insert_obu(obu_id) {
+                Some(coordinate) => {
+                    obus.push(OnBoardUnit::new(obu_id, coordinate));
+                    obu_id += 1;
+                }
+                None => {
+                    panic!("No more space available");
+                }
+            }
+        }
+
+        // check the coordinates of the first obu
+        let coordinate = obus[0].get_coordinate();
+        assert_eq!(coordinate.x, 0);
+        assert_eq!(coordinate.y, 9);
+
+        // check the coordinates of the second obu
+        let coordinate = obus[1].get_coordinate();
+        assert_eq!(coordinate.x, 0);
+        assert_eq!(coordinate.y, 0);
+
+        // check the coordinates of the third obu
+        let coordinate = obus[2].get_coordinate();
+        assert_eq!(coordinate.x, 3);
+        assert_eq!(coordinate.y, 0);
+
+        // check the coordinates of the fourth obu
+        let coordinate = obus[3].get_coordinate();
+        assert_eq!(coordinate.x, 9);
+        assert_eq!(coordinate.y, 3);
+
+        // check the coordinates of the fifth obu
+        let coordinate = obus[4].get_coordinate();
+        assert_eq!(coordinate.x, 6);
+        assert_eq!(coordinate.y, 9);
+
+        // check the coordinates of the sixth obu
+        let coordinate = obus[5].get_coordinate();
+        assert_eq!(coordinate.x, 0);
+        assert_eq!(coordinate.y, 6);
+
+        // check the coordinates of the seventh obu
+        let coordinate = obus[6].get_coordinate();
+        assert_eq!(coordinate.x, 9);
+        assert_eq!(coordinate.y, 0);
+
+        // check the coordinates of the eighth obu
+        let coordinate = obus[7].get_coordinate();
+        assert_eq!(coordinate.x, 9);
+        assert_eq!(coordinate.y, 9);
     }
 }
