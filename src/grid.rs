@@ -5,7 +5,7 @@
  * environment. The grid is used to store the state of the environment.
  */
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct Coordinate {
     pub x: usize,
     pub y: usize,
@@ -17,10 +17,11 @@ enum FlowDirection {
     ToZero,   // right -> left / bottom -> top
 }
 
-struct CellState {
-    id: usize,                         // unique id
+#[derive(Clone, Debug)]
+pub struct CellState {
+    pub id: usize,                     // unique id
     is_street: bool,                   // Is this cell a street?
-    obu_id: Option<u32>,               // If this cell is occupied by an OBU, what is its ID?
+    pub obu_id: Option<u32>,           // If this cell is occupied by an OBU, what is its ID?
     next_coordinates: Vec<Coordinate>, // If this cell is a street, what are the next possible coordinates?
 }
 
@@ -65,7 +66,7 @@ impl Grid {
             block_size,
             cells,
             dimension,
-        }
+        }        
     }
 
     /**
@@ -190,6 +191,56 @@ impl Grid {
                 }
             }
         }
+    }
+
+    /**
+     * Get the cell state for a given coordinate.
+     */
+    pub fn get_cell_state(&self, coordinate: Coordinate) -> CellState {
+        self.cells[coordinate.x][coordinate.y].clone()
+    }
+
+    /**
+     * Get possible moves for a given coordinate.
+     */
+    pub fn get_possible_moves(&mut self, coordinate: Coordinate) -> Vec<Coordinate> {
+        // get the next coordinates
+        let possible_moves = self.get_next_coordinates(coordinate);
+
+        // filter the next coordinates to get only the possible moves
+        possible_moves
+            .into_iter()
+            .filter(|next_coordinate| {
+                // get the next cell state
+                let next_cell_state = self.get_cell_state(next_coordinate.clone());
+
+                // check if the next cell is not occupied
+                next_cell_state.obu_id.is_none()
+            })
+            .collect()
+    }
+
+    /**
+     * Move obu_id from the current coordinate to the next coordinate.
+     */
+    pub fn move_obu(&mut self, current_coordinate: Coordinate, next_coordinate: Coordinate) -> Coordinate {
+        // get the current cell state
+        let mut current_cell_state = self.get_cell_state(current_coordinate);
+
+        // get the next cell state
+        let mut next_cell_state = self.get_cell_state(next_coordinate);
+
+        // move the obu_id from the current cell to the next cell
+        next_cell_state.obu_id = current_cell_state.obu_id;
+        current_cell_state.obu_id = None;
+
+        // update the current cell state
+        self.cells[current_coordinate.x][current_coordinate.y] = current_cell_state;
+
+        // update the next cell state
+        self.cells[next_coordinate.x][next_coordinate.y] = next_cell_state;
+
+        next_coordinate.clone()
     }
 
     /**
@@ -553,5 +604,30 @@ mod tests {
         let coordinate = obus[7].get_coordinate();
         assert_eq!(coordinate.x, 9);
         assert_eq!(coordinate.y, 9);
+    }
+
+    /**
+     * Test get possible moves
+     */
+    #[test]
+    fn test_get_possible_moves() {
+        let mut grid = Grid::new(3, 2);
+
+        let possible_moves = grid.get_possible_moves(Coordinate { x: 3, y: 0 });
+        assert_eq!(possible_moves.len(), 2);
+        assert_eq!(possible_moves[0].x, 3);
+        assert_eq!(possible_moves[0].y, 1);
+        assert_eq!(possible_moves[1].x, 4);
+        assert_eq!(possible_moves[1].y, 0);
+
+        grid.cells[3][1].obu_id = Some(0);
+        let possible_moves = grid.get_possible_moves(Coordinate { x: 3, y: 0 });
+        assert_eq!(possible_moves.len(), 1);
+        assert_eq!(possible_moves[0].x, 4);
+        assert_eq!(possible_moves[0].y, 0);
+
+        grid.cells[1][0].obu_id = Some(1);
+        let possible_moves = grid.get_possible_moves(Coordinate { x: 0, y: 0 });
+        assert_eq!(possible_moves.len(), 0);
     }
 }
