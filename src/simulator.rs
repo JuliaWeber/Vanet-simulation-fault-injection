@@ -22,11 +22,11 @@ impl Simulator {
     /**
      * Run the simulation
      */
-    pub fn run(&mut self) {
+    pub fn run(&mut self, steps: usize) {
         // update the grid cells
         self.grid.update_next_coordinates();
 
-        for _ in 1..30 {
+        for _ in 0..steps {
             self.move_on_board_units();
         }
     }
