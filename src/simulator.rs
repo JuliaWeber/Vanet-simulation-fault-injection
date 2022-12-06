@@ -1,5 +1,5 @@
 use crate::grid::Grid;
-use crate::obu::OnBoardUnitManager;
+use crate::obu_manager::OnBoardUnitManager;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
