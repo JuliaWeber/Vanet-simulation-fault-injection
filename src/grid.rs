@@ -70,6 +70,13 @@ impl Grid {
     }
 
     /**
+     * Get the grid dimension.
+     */
+    pub fn get_dimension(&self) -> usize {
+        self.dimension
+    }
+
+    /**
      * Check if the given row or column is a street.
      */
     fn is_street(&self, i: usize) -> bool {
