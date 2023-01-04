@@ -1,39 +1,52 @@
-use crate::grid::{Coordinate, Grid};
-use crate::obu_manager::OnBoardUnitManager;
-use crate::rsu_manager::RoadSideUnitManager;
+use crate::comms::Ether;
+use crate::grid::{Coordinate, Grid, GridParams};
+use crate::obu_manager::{ObuManagerParams, OnBoardUnitManager};
+use crate::rsu_manager::{RoadSideUnitManager, RsuManagerParams};
+use rand::distributions::{Distribution, Uniform};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+
+#[derive(Clone, Debug)]
+pub enum NodeType {
+    OBU,
+    RSU,
+}
 
 pub struct Simulator {
     obu_manager: OnBoardUnitManager,
     rsu_manager: RoadSideUnitManager,
     grid: Grid,
     round: usize,
+    ether: Ether,
 }
 
 impl Simulator {
     /**
      * Create a new Simulator
      */
-    pub fn new(blocks_per_street: usize, block_size: usize, rsu_comms_range: usize) -> Simulator {
+    pub fn new(
+        grid_params: GridParams,
+        rsu_manager_params: RsuManagerParams,
+        obu_manager_params: ObuManagerParams,
+    ) -> Simulator {
         Simulator {
-            obu_manager: OnBoardUnitManager::new(),
-            rsu_manager: RoadSideUnitManager::new(rsu_comms_range),
-            grid: Grid::new(blocks_per_street, block_size),
+            obu_manager: OnBoardUnitManager::new(obu_manager_params),
+            rsu_manager: RoadSideUnitManager::new(rsu_manager_params),
+            grid: Grid::new(grid_params),
             round: 0,
+            ether: Ether::new(),
         }
     }
 
     /**
      * Add a new OnBoardUnit to the grid.
      */
-    pub fn add_on_board_unit(&mut self) {
-        // add a new obu to the grid
+    pub fn add_on_board_unit(&mut self) -> Option<u32> {
+        // try to find an empty entry in the grid
         match self.grid.insert_obu(self.obu_manager.get_next_id()) {
-            Some(coordinate) => {
-                self.obu_manager.create_obu(coordinate);
-            }
-            None => println!("No space available for a new OBU"),
+            // if an empty entry was found, try to create a new OnBoardUnit
+            Some(coordinate) => self.obu_manager.create_obu(coordinate),
+            None => None,
         }
     }
 
@@ -47,7 +60,7 @@ impl Simulator {
             "RSUs already added to the grid."
         );
 
-        let comms_range = self.rsu_manager.get_comms_range();
+        let comms_range: u32 = self.rsu_manager.get_comms_range();
         let mut next_coordinate = Coordinate {
             x: comms_range - 1,
             y: comms_range - 1,
@@ -57,7 +70,12 @@ impl Simulator {
         // add rsus to the grid
         while next_coordinate.x < self.grid.get_dimension() {
             while next_coordinate.y < self.grid.get_dimension() {
-                last_added_id = self.rsu_manager.create_rsu(next_coordinate.clone());
+                let covered_area = self
+                    .grid
+                    .get_square_cords(next_coordinate.clone(), comms_range);
+                last_added_id = self
+                    .rsu_manager
+                    .create_rsu(next_coordinate.clone(), covered_area);
                 next_coordinate.y += (comms_range * 2) - 1;
 
                 // if the next coordinate is out of bounds
@@ -87,22 +105,61 @@ impl Simulator {
     }
 
     /**
+     * Initialize the simulation
+     */
+    pub fn init(&mut self) {
+        self.grid.update_next_coordinates();
+        self.add_road_side_units();
+
+        println!("--- SIMULATION INITIALIZED ---");
+        println!("Number os RSUs: {}", self.rsu_manager.rsus.len());
+        println!("Number os OBUs: {}", self.obu_manager.get_max_obus());
+
+        self.grid.print_stats();
+    }
+
+    /**
      * Run the simulation
      */
-    pub fn run(&mut self, steps: usize) {
-        // update the grid cells
-        self.grid.update_next_coordinates();
+    pub fn run(&mut self, rounds: usize) {
 
-        for _ in 0..steps {
-            self.round += 1;
-            self.move_on_board_units();
+        println!("--- SIMULATION RUNNING ---");
+
+        // collect messages for the first round
+        if self.round == 0 {
+            self.collect_messages();
         }
+
+        for _ in 0..rounds {
+            self.round += 1;
+            self.deliver_messages(); // deliver messages from the previous round
+            self.do_obus_moves();
+
+            // add new obus
+            let mut added_obus = 0;
+            while self.obu_manager.obus.len() < self.obu_manager.get_max_obus() as usize {
+                match self.add_on_board_unit() {
+                    Some(_) => added_obus += 1,
+                    None => break,
+                }
+            }
+
+            if added_obus > 0 {
+                println!("Added {} new OBUs in round {}.", added_obus, self.round);
+            }
+
+            self.collect_messages(); // collect messages for the current round
+        }
+
+        println!("--- SIMULATION FINISHED ---");
+        self.obu_manager.print_stats();
+
     }
 
     /**
      * Move OnBoardUnits.
      */
-    pub fn move_on_board_units(&mut self) {
+    fn do_obus_moves(&mut self) {
         for obu in self.obu_manager.obus.values_mut() {
             // get the next possible coordinates for the obu
             let possible_moves = self.grid.get_possible_moves(obu.get_coordinate());
@@ -110,17 +167,6 @@ impl Simulator {
             // randomly select a coordinate
             match possible_moves.choose(&mut thread_rng()) {
                 Some(coordinate) => {
-                    let current_coordinate = obu.get_coordinate();
-
-                    println!(
-                        "obu {} from {},{} to {},{}",
-                        obu.get_id(),
-                        current_coordinate.x,
-                        current_coordinate.y,
-                        coordinate.x,
-                        coordinate.y
-                    );
-
                     obu.set_coordinate(
                         self.grid.move_obu(obu.get_coordinate(), coordinate.clone()),
                     );
@@ -129,6 +175,111 @@ impl Simulator {
             };
         }
     }
+
+    /**
+     * Collect messages from OBUs and RSUs and send them to the Ether.
+     */
+    fn collect_messages(&mut self) {
+        // clear the ether
+        self.ether.clear();
+
+        // collect messages from OBUs
+        let messages = self.obu_manager.collect_messages();
+        for mut message in messages {
+            message.covered_area = self
+                .grid
+                .get_square_cords(message.coordinate, message.comms_range);
+            self.ether.send_message(message);
+        }
+
+        /*for obu in self.obu_manager.obus.values_mut() {
+            match obu.get_message() {
+                Some(mut message) => {
+                    // count the number of tx tentatives
+                    self.obu_tx_count += 1;
+
+                    // if the message is lost
+                    if Simulator::random_event(25) {
+                        // count the number of tx errors
+                        self.obu_tx_errors += 1;
+                    } else {
+                        // if the message is not lost, send it to the ether
+                        message.covered_area =
+                            self.grid.get_square_cords(message.coordinate, comms_range);
+
+                        self.ether.send_message(message);
+                    }
+                }
+                None => (),
+            }
+        }*/
+
+        // Collect messages from RSUs
+        let comms_range = self.rsu_manager.get_comms_range();
+        for rsu in self.rsu_manager.rsus.values() {
+            match rsu.get_message() {
+                Some(mut message) => {
+                    message.covered_area =
+                        self.grid.get_square_cords(message.coordinate, comms_range);
+
+                    self.ether.send_message(message);
+                }
+                None => (),
+            }
+        }
+    }
+
+    /**
+     * Deliver messages from the ether to the OBUs and RSUs.
+     */
+    fn deliver_messages(&mut self) {
+        // deliver messages to OBUs
+        let comms_range = self.obu_manager.get_comms_range();
+        for obu in self.obu_manager.obus.values_mut() {
+            let obu_coverage = self
+                .grid
+                .get_square_cords(obu.get_coordinate(), comms_range);
+
+            // clear neighbors
+            obu.clear_neighbors();
+
+            for message in &self.ether.messages {
+                if self
+                    .grid
+                    .check_overlaping_squares(obu_coverage, message.covered_area)
+                {
+                    obu.receive_message(message.clone());
+                }
+            }
+        }
+
+        // deliver messages to RSUs
+        for rsu in self.rsu_manager.rsus.values_mut() {
+            // clear neighbors
+            rsu.clear_neighbors();
+
+            for message in &self.ether.messages {
+                if self
+                    .grid
+                    .check_overlaping_squares(rsu.get_covered_area(), message.covered_area)
+                {
+                    rsu.receive_message(message.clone());
+                }
+            }
+        }
+    }
+
+    /**
+     * Use uniform distribution to randomly select a number between 1 and 100,
+     * and return true if the number is less than or equal to the given probability.
+     */
+    pub fn random_event(probability: f32) -> bool {
+        let between = Uniform::from(1..=100);
+        let mut rng = rand::thread_rng();
+        let random_number = between.sample(&mut rng) as f32;
+        random_number / 100.0 <= probability
+    }
+    
 }
 
 /***
@@ -138,13 +289,29 @@ impl Simulator {
 mod tests {
 
     use super::*;
+    use crate::comms::Message;
 
     /**
      * Test the creation of a Simulator.
      */
     #[test]
     fn test_create_simulator() {
-        let simulator = Simulator::new(3, 2, 5);
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
+
+        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 2,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
 
         assert_eq!(simulator.obu_manager.obus.len(), 0);
         assert_eq!(simulator.rsu_manager.rsus.len(), 0);
@@ -153,13 +320,28 @@ mod tests {
     }
 
     /**
-     * Test RSU addition to the grid.
+     * Test Simulator initialization.
      */
     #[test]
     fn test_add_road_side_units() {
-        let mut simulator = Simulator::new(3, 2, 3);
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
 
-        simulator.add_road_side_units();
+        let rsu_manager_params = RsuManagerParams { comms_range: 3 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 2,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
+
+        simulator.init();
 
         assert_eq!(simulator.rsu_manager.rsus.len(), 4);
 
@@ -185,7 +367,22 @@ mod tests {
      */
     #[test]
     fn test_add_road_side_units_2() {
-        let mut simulator = Simulator::new(3, 2, 4);
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
+
+        let rsu_manager_params = RsuManagerParams { comms_range: 4 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 2,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
 
         simulator.add_road_side_units();
 
@@ -213,7 +410,22 @@ mod tests {
      */
     #[test]
     fn test_add_road_side_units_3() {
-        let mut simulator = Simulator::new(3, 2,6);
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
+
+        let rsu_manager_params = RsuManagerParams { comms_range: 6 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 2,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
 
         simulator.add_road_side_units();
 
@@ -222,5 +434,146 @@ mod tests {
         let rsu = simulator.rsu_manager.rsus.get(&0).unwrap();
         assert_eq!(rsu.get_coordinate().x, 5);
         assert_eq!(rsu.get_coordinate().y, 5);
+    }
+
+    /**
+     * Test simulation
+     */
+    #[test]
+    fn test_simulation() {
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
+
+        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 1,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
+
+        simulator.init();
+
+        simulator.run(1);
+
+        assert_eq!(simulator.ether.get_message_count(), 1);
+        assert_eq!(simulator.round, 1);
+    }
+
+    /**
+     * Test message collection from OBUs.
+     */
+    #[test]
+    fn test_message_collection() {
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
+
+        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 2,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
+        simulator.add_road_side_units();
+
+        simulator.add_on_board_unit();
+        simulator.add_on_board_unit();
+
+        simulator.collect_messages();
+        assert_eq!(simulator.ether.get_message_count(), 2);
+        simulator.collect_messages();
+        assert_eq!(simulator.ether.get_message_count(), 2);
+    }
+
+    /**
+     * Test message delivery to OBUs
+     */
+    #[test]
+    fn test_message_delivery() {
+        let comms_range: u32 = 2;
+
+        let grid_params = GridParams {
+            blocks_per_street: 3,
+            block_size: 2,
+        };
+
+        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
+
+        let obu_manager_params = ObuManagerParams {
+            max_obus: 2,
+            comms_range: 2,
+            tx_base_failure_rate: 0.0,
+            tx_faulty_obu_failure_rate: 0.0,
+            faulty_obus: 0,
+        };
+
+        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
+        simulator.add_road_side_units();
+
+        match simulator
+            .grid
+            .insert_obu(simulator.obu_manager.get_next_id())
+        {
+            Some(_) => {
+                let coordinate = Coordinate { x: 0, y: 0 };
+                simulator.obu_manager.create_obu(coordinate);
+            }
+            None => {
+                panic!("Could not insert OBU");
+            }
+        }
+
+        // message out of range
+        let msg_coordinate = Coordinate {
+            x: 2 * comms_range + 1,
+            y: 2 * comms_range + 1,
+        };
+
+        let mut message = Message::new(1, NodeType::OBU, msg_coordinate, comms_range);
+        message.covered_area = simulator
+            .grid
+            .get_square_cords(message.coordinate, comms_range);
+
+        simulator.ether.send_message(message.clone());
+        assert_eq!(simulator.ether.get_message_count(), 1);
+
+        simulator.deliver_messages();
+
+        let obu = simulator.obu_manager.obus.get(&0).unwrap();
+        assert_eq!(obu.neighbors.len(), 0);
+
+        simulator.ether.clear();
+
+        // message in range
+        let msg_coordinate = Coordinate {
+            x: comms_range - 1,
+            y: comms_range - 1,
+        };
+
+        let mut message = Message::new(1, NodeType::OBU, msg_coordinate, comms_range);
+        message.covered_area = simulator
+            .grid
+            .get_square_cords(message.coordinate, comms_range);
+
+        simulator.ether.send_message(message.clone());
+        assert_eq!(simulator.ether.get_message_count(), 1);
+
+        simulator.deliver_messages();
+
+        let obu = simulator.obu_manager.obus.get(&0).unwrap();
+        assert_eq!(obu.neighbors.len(), 1);
     }
 }

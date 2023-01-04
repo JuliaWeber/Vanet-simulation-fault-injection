@@ -1,6 +1,7 @@
 pub mod grid;
-pub mod obu;
+mod obu;
 pub mod obu_manager;
-pub mod rsu;
+mod rsu;
 pub mod rsu_manager;
+mod comms;
 pub mod simulator;
