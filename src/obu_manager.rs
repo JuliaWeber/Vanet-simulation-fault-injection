@@ -11,9 +11,13 @@ pub struct ObuManagerParams {
     pub faulty_obus: u32,
 }
 
-pub struct ObuManagerStats {
-    pub tx_count: u32,
-    pub tx_error_count: u32,
+struct ObuManagerStats {
+    normal_obu_tx_count: u32,
+    normal_obu_tx_error_count: u32,
+    faulty_obu_tx_count: u32,
+    faulty_obu_tx_error_count: u32,
+    total_tx_count: u32,
+    total_tx_error_count: u32,
 }
 
 pub struct OnBoardUnitManager {
@@ -43,8 +47,12 @@ impl OnBoardUnitManager {
             faulty_obus_added: 0,
             obus: HashMap::new(),
             stats: ObuManagerStats {
-                tx_count: 0,
-                tx_error_count: 0,
+                normal_obu_tx_count: 0,
+                normal_obu_tx_error_count: 0,
+                faulty_obu_tx_count: 0,
+                faulty_obu_tx_error_count: 0,
+                total_tx_count: 0,
+                total_tx_error_count: 0,
             },
         }
     }
@@ -127,7 +135,13 @@ impl OnBoardUnitManager {
         let mut messages = Vec::new();
 
         for obu in self.obus.values_mut() {
-            self.stats.tx_count += 1;
+            self.stats.total_tx_count += 1;
+
+            if obu.is_faulty() {
+                self.stats.faulty_obu_tx_count += 1;
+            } else {
+                self.stats.normal_obu_tx_count += 1;
+            }
 
             match obu.get_message() {
                 Some(mut message) => {
@@ -135,7 +149,15 @@ impl OnBoardUnitManager {
                     message.comms_range = self.comms_range;
                     messages.push(message);
                 }
-                None => self.stats.tx_error_count += 1,
+                None => {
+                    self.stats.total_tx_error_count += 1;
+
+                    if obu.is_faulty() {
+                        self.stats.faulty_obu_tx_error_count += 1;
+                    } else {
+                        self.stats.normal_obu_tx_error_count += 1;
+                    }
+                }
             }
         }
 
@@ -147,11 +169,23 @@ impl OnBoardUnitManager {
      */
     pub fn print_stats(&self) {
         println!("--- OBU Manager Stats ---");
-        println!("TX count: {}", self.stats.tx_count);
         println!(
-            "TX error count: {} ({}%)",
-            self.stats.tx_error_count,
-            self.stats.tx_error_count as f32 / self.stats.tx_count as f32 * 100.0
+            "     Total TX: {} / errors {} ({}%)",
+            self.stats.total_tx_count,
+            self.stats.total_tx_error_count,
+            self.stats.total_tx_error_count as f32 / self.stats.total_tx_count as f32 * 100.0
+        );
+        println!(
+            "Normal OBU TX: {} / errors {} ({}%)",
+            self.stats.normal_obu_tx_count,
+            self.stats.normal_obu_tx_error_count,
+            self.stats.normal_obu_tx_error_count as f32 / self.stats.normal_obu_tx_count as f32 * 100.0
+        );
+        println!(
+            "Faulty OBU TX: {} / errors {} ({}%)",
+            self.stats.faulty_obu_tx_count,
+            self.stats.faulty_obu_tx_error_count,
+            self.stats.faulty_obu_tx_error_count as f32 / self.stats.faulty_obu_tx_count as f32 * 100.0
         );
     }
 }

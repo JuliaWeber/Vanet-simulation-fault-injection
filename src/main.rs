@@ -1,6 +1,3 @@
-use std::io::{stdin, stdout, Write};
-use termion::input::TermRead;
-use termion::raw::IntoRawMode;
 use vanet4j::simulator::Simulator;
 use vanet4j::grid::GridParams;
 use vanet4j::rsu_manager::RsuManagerParams;
@@ -31,11 +28,4 @@ fn main() {
 
     simulator.run(180);
 
-}
-
-fn pause() {
-    let mut stdout = stdout().into_raw_mode().unwrap();
-    write!(stdout, "Press any key to continue...\r\n").unwrap();
-    stdout.flush().unwrap();
-    stdin().keys().next();
 }
