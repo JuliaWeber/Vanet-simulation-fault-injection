@@ -281,7 +281,7 @@ impl Grid {
     /**
      * Calculate square coordinates for a given coordinate and range.
      */
-    pub fn get_square_cords(&mut self, coordinate: Coordinate, range: u32) -> SquareCoords {
+    pub fn get_square_cords(&self, coordinate: Coordinate, range: u32) -> SquareCoords {
         let mut x1: u32 = 0;
         let mut y1: u32 = 0;
 
@@ -305,7 +305,6 @@ impl Grid {
      * Check overlaping squares
      */
     pub fn check_overlaping_squares(
-        &mut self,
         square1: SquareCoords,
         square2: SquareCoords,
     ) -> bool {
@@ -836,7 +835,7 @@ mod tests {
             x2: 7,
             y2: 7,
         };
-        assert_eq!(grid.check_overlaping_squares(square_1, square_2), true);
+        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), true);
 
         let square_1 = SquareCoords {
             x1: 10,
@@ -850,7 +849,7 @@ mod tests {
             x2: 12,
             y2: 11,
         };
-        assert_eq!(grid.check_overlaping_squares(square_1, square_2), true);
+        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), true);
     }
 
     /**
@@ -878,7 +877,7 @@ mod tests {
             x2: 9,
             y2: 9,
         };
-        assert_eq!(grid.check_overlaping_squares(square_1, square_2), false);
+        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), false);
 
         let square_1 = SquareCoords {
             x1: 15,
@@ -892,6 +891,6 @@ mod tests {
             x2: 14,
             y2: 14,
         };
-        assert_eq!(grid.check_overlaping_squares(square_1, square_2), false);
+        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), false);
     }
 }

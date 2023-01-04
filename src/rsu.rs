@@ -51,7 +51,7 @@ impl RoadSideUnit {
     }
 
     /**
-     * Receive a messagem from the ether
+     * Receive a message from the ether
      */
     pub fn receive_message(&mut self, message: Message) {
         match message.origin_type {
@@ -62,11 +62,6 @@ impl RoadSideUnit {
                 };
 
                 self.neighbors.push(neighbor);
-
-                /*println!(
-                    "RSU {} received a message from {}",
-                    self.id, message.origin_id
-                );*/
             }
             _ => {}
         }

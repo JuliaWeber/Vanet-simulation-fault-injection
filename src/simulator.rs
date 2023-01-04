@@ -122,7 +122,6 @@ impl Simulator {
      * Run the simulation
      */
     pub fn run(&mut self, rounds: usize) {
-
         println!("--- SIMULATION RUNNING ---");
 
         // collect messages for the first round
@@ -153,7 +152,6 @@ impl Simulator {
 
         println!("--- SIMULATION FINISHED ---");
         self.obu_manager.print_stats();
-
     }
 
     /**
@@ -192,28 +190,6 @@ impl Simulator {
             self.ether.send_message(message);
         }
 
-        /*for obu in self.obu_manager.obus.values_mut() {
-            match obu.get_message() {
-                Some(mut message) => {
-                    // count the number of tx tentatives
-                    self.obu_tx_count += 1;
-
-                    // if the message is lost
-                    if Simulator::random_event(25) {
-                        // count the number of tx errors
-                        self.obu_tx_errors += 1;
-                    } else {
-                        // if the message is not lost, send it to the ether
-                        message.covered_area =
-                            self.grid.get_square_cords(message.coordinate, comms_range);
-
-                        self.ether.send_message(message);
-                    }
-                }
-                None => (),
-            }
-        }*/
-
         // Collect messages from RSUs
         let comms_range = self.rsu_manager.get_comms_range();
         for rsu in self.rsu_manager.rsus.values() {
@@ -233,40 +209,13 @@ impl Simulator {
      * Deliver messages from the ether to the OBUs and RSUs.
      */
     fn deliver_messages(&mut self) {
+
         // deliver messages to OBUs
-        let comms_range = self.obu_manager.get_comms_range();
-        for obu in self.obu_manager.obus.values_mut() {
-            let obu_coverage = self
-                .grid
-                .get_square_cords(obu.get_coordinate(), comms_range);
-
-            // clear neighbors
-            obu.clear_neighbors();
-
-            for message in &self.ether.messages {
-                if self
-                    .grid
-                    .check_overlaping_squares(obu_coverage, message.covered_area)
-                {
-                    obu.receive_message(message.clone());
-                }
-            }
-        }
+        self.obu_manager.deliver_messages(&self.grid, &self.ether.messages);
 
         // deliver messages to RSUs
-        for rsu in self.rsu_manager.rsus.values_mut() {
-            // clear neighbors
-            rsu.clear_neighbors();
+        self.rsu_manager.deliver_messages(&self.ether.messages);
 
-            for message in &self.ether.messages {
-                if self
-                    .grid
-                    .check_overlaping_squares(rsu.get_covered_area(), message.covered_area)
-                {
-                    rsu.receive_message(message.clone());
-                }
-            }
-        }
     }
 
     /**
@@ -279,7 +228,6 @@ impl Simulator {
         let random_number = between.sample(&mut rng) as f32;
         random_number / 100.0 <= probability
     }
-    
 }
 
 /***

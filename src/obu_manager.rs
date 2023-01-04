@@ -1,5 +1,5 @@
 use crate::comms::Message;
-use crate::grid::Coordinate;
+use crate::grid::{Grid, Coordinate};
 use crate::obu::OnBoardUnit;
 use std::collections::HashMap;
 
@@ -134,6 +134,7 @@ impl OnBoardUnitManager {
     pub fn collect_messages(&mut self) -> Vec<Message> {
         let mut messages = Vec::new();
 
+        // iterate over all obus
         for obu in self.obus.values_mut() {
             self.stats.total_tx_count += 1;
 
@@ -165,6 +166,32 @@ impl OnBoardUnitManager {
     }
 
     /**
+     * Deliver messages to OBUs.
+     */
+    pub fn deliver_messages(&mut self, grid: &Grid, messages: &Vec<Message>) {
+
+        let comms_range = self.comms_range;
+
+        // iterate over all obus
+        for obu in self.obus.values_mut() {
+
+            // clear the obu neighbors
+            obu.clear_neighbors();
+
+            // calculate the coverage area of the obu
+            let obu_coverage = grid.get_square_cords(obu.get_coordinate(), comms_range);
+
+            // for each message check if it is in the coverage area of the obu
+            for message in messages {
+                if Grid::check_overlaping_squares(obu_coverage, message.covered_area) {
+                    // deliver the message to the obu
+                    obu.receive_message(message.clone());
+                }
+            }
+        }
+    }
+
+    /**
      * Print the stats.
      */
     pub fn print_stats(&self) {
@@ -179,13 +206,15 @@ impl OnBoardUnitManager {
             "Normal OBU TX: {} / errors {} ({}%)",
             self.stats.normal_obu_tx_count,
             self.stats.normal_obu_tx_error_count,
-            self.stats.normal_obu_tx_error_count as f32 / self.stats.normal_obu_tx_count as f32 * 100.0
+            self.stats.normal_obu_tx_error_count as f32 / self.stats.normal_obu_tx_count as f32
+                * 100.0
         );
         println!(
             "Faulty OBU TX: {} / errors {} ({}%)",
             self.stats.faulty_obu_tx_count,
             self.stats.faulty_obu_tx_error_count,
-            self.stats.faulty_obu_tx_error_count as f32 / self.stats.faulty_obu_tx_count as f32 * 100.0
+            self.stats.faulty_obu_tx_error_count as f32 / self.stats.faulty_obu_tx_count as f32
+                * 100.0
         );
     }
 }

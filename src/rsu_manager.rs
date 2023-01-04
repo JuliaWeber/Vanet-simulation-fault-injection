@@ -1,6 +1,8 @@
-use crate::grid::{Coordinate, SquareCoords};
+use crate::comms::Message;
+use crate::grid::{Grid, Coordinate, SquareCoords};
 use crate::rsu::RoadSideUnit;
 use std::collections::HashMap;
+
 
 pub struct RsuManagerParams {
     pub comms_range: u32,
@@ -66,6 +68,27 @@ impl RoadSideUnitManager {
         // return the id of the created rsu
         id
     }
+
+    /**
+     * Deliver messages to RSUs.
+     */
+    pub fn deliver_messages(&mut self, messages: &Vec<Message>) {
+        
+        // iterate over all rsus
+        for rsu in self.rsus.values_mut() {
+
+            // clear the obu neighbors
+            rsu.clear_neighbors();
+
+            // for each message check if it is in the coverage area of the obu
+            for message in messages {
+                if Grid::check_overlaping_squares(rsu.get_covered_area(), message.covered_area) {
+                    // deliver the message to the obu
+                    rsu.receive_message(message.clone());
+                }
+            }
+        }
+    }
 }
 
 /***
@@ -82,10 +105,7 @@ mod tests {
      */
     #[test]
     fn test_create_rsu_manager() {
-
-        let params = RsuManagerParams {
-            comms_range: 5,
-        };
+        let params = RsuManagerParams { comms_range: 5 };
 
         let rsu_manager = RoadSideUnitManager::new(params);
         assert_eq!(rsu_manager.next_id, 0);
@@ -98,10 +118,7 @@ mod tests {
      */
     #[test]
     fn test_create_rsu() {
-
-        let params = RsuManagerParams {
-            comms_range: 5,
-        };
+        let params = RsuManagerParams { comms_range: 5 };
 
         let mut rsu_manager = RoadSideUnitManager::new(params);
         let id = rsu_manager.create_rsu(
