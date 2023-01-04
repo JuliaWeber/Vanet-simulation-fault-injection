@@ -44,7 +44,7 @@ impl Message {
 }
 
 pub struct Ether {
-    pub messages: Vec<Message>,
+    messages: Vec<Message>,
 }
 
 impl Ether {
@@ -72,11 +72,12 @@ impl Ether {
     }
 
     /**
-     * Get number of messages in the Ether
+     * Get an immutable reference to the messages vector
      */
-    pub fn get_message_count(&self) -> usize {
-        self.messages.len()
+    pub fn get_messages(&self) -> &Vec<Message> {
+        &self.messages
     }
+
 }
 
 /***
@@ -93,15 +94,15 @@ mod tests {
 
         let message = Message::new(0, NodeType::OBU, Coordinate { x: 0, y: 0 }, 2);
         ether.send_message(message);
-        assert_eq!(ether.get_message_count(), 1);
+        assert_eq!(ether.get_messages().len(), 1);
 
         let message = Message::new(0, NodeType::OBU, Coordinate { x: 0, y: 0 }, 2);
         ether.send_message(message);
         let message = Message::new(0, NodeType::OBU, Coordinate { x: 0, y: 0 }, 2);
         ether.send_message(message);
-        assert_eq!(ether.get_message_count(), 3);
+        assert_eq!(ether.get_messages().len(), 3);
 
         ether.clear();
-        assert_eq!(ether.get_message_count(), 0);
+        assert_eq!(ether.get_messages().len(), 0);
     }
 }

@@ -394,4 +394,7 @@ mod tests {
         let messages = obu_manager.collect_messages();
         assert_eq!(messages.len(), 3);
     }
+
+    // TODO: Move message deliver tests from simulator.rs to here
+
 }

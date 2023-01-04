@@ -211,10 +211,10 @@ impl Simulator {
     fn deliver_messages(&mut self) {
 
         // deliver messages to OBUs
-        self.obu_manager.deliver_messages(&self.grid, &self.ether.messages);
+        self.obu_manager.deliver_messages(&self.grid, &self.ether.get_messages());
 
         // deliver messages to RSUs
-        self.rsu_manager.deliver_messages(&self.ether.messages);
+        self.rsu_manager.deliver_messages(&self.ether.get_messages());
 
     }
 
@@ -410,7 +410,7 @@ mod tests {
 
         simulator.run(1);
 
-        assert_eq!(simulator.ether.get_message_count(), 1);
+        assert_eq!(simulator.ether.get_messages().len(), 1);
         assert_eq!(simulator.round, 1);
     }
 
@@ -441,9 +441,9 @@ mod tests {
         simulator.add_on_board_unit();
 
         simulator.collect_messages();
-        assert_eq!(simulator.ether.get_message_count(), 2);
+        assert_eq!(simulator.ether.get_messages().len(), 2);
         simulator.collect_messages();
-        assert_eq!(simulator.ether.get_message_count(), 2);
+        assert_eq!(simulator.ether.get_messages().len(), 2);
     }
 
     /**
@@ -496,7 +496,7 @@ mod tests {
             .get_square_cords(message.coordinate, comms_range);
 
         simulator.ether.send_message(message.clone());
-        assert_eq!(simulator.ether.get_message_count(), 1);
+        assert_eq!(simulator.ether.get_messages().len(), 1);
 
         simulator.deliver_messages();
 
@@ -517,7 +517,7 @@ mod tests {
             .get_square_cords(message.coordinate, comms_range);
 
         simulator.ether.send_message(message.clone());
-        assert_eq!(simulator.ether.get_message_count(), 1);
+        assert_eq!(simulator.ether.get_messages().len(), 1);
 
         simulator.deliver_messages();
 

@@ -1,25 +1,24 @@
 use crate::comms::Message;
-use crate::grid::{Grid, Coordinate, SquareCoords};
+use crate::grid::{Coordinate, Grid, SquareCoords};
 use crate::rsu::RoadSideUnit;
 use std::collections::HashMap;
-
 
 pub struct RsuManagerParams {
     pub comms_range: u32,
 }
 
-struct OBUStateEntry {
+/*struct OBUStateEntry {
     id: u32,
     coordinate: Coordinate,
     round: usize,
     rsu_id: u32,
-}
+}*/
 
 pub struct RoadSideUnitManager {
     next_id: u32,
     comms_range: u32,
     pub rsus: HashMap<u32, RoadSideUnit>,
-    obus_states: Vec<OBUStateEntry>,
+    //obus_states: Vec<OBUStateEntry>,
 }
 
 impl RoadSideUnitManager {
@@ -31,7 +30,7 @@ impl RoadSideUnitManager {
             next_id: 0,
             comms_range: params.comms_range,
             rsus: HashMap::new(),
-            obus_states: Vec::new(),
+            //obus_states: Vec::new(),
         }
     }
 
@@ -73,10 +72,8 @@ impl RoadSideUnitManager {
      * Deliver messages to RSUs.
      */
     pub fn deliver_messages(&mut self, messages: &Vec<Message>) {
-        
         // iterate over all rsus
         for rsu in self.rsus.values_mut() {
-
             // clear the obu neighbors
             rsu.clear_neighbors();
 
@@ -157,4 +154,6 @@ mod tests {
         assert_eq!(rsu.get_coordinate().x, 3);
         assert_eq!(rsu.get_coordinate().y, 6);
     }
+
+    // TODO: Move message deliver tests from simulator.rs to here
 }

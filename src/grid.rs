@@ -789,7 +789,7 @@ mod tests {
             block_size: 2,
         };
 
-        let mut grid = Grid::new(params);
+        let grid = Grid::new(params);
 
         let square_coords = grid.get_square_cords(Coordinate { x: 0, y: 0 }, 5);
         assert_eq!(square_coords.x1, 0);
@@ -815,13 +815,6 @@ mod tests {
      */
     #[test]
     fn test_overlaping_squares() {
-
-        let params = GridParams {
-            blocks_per_street: 3,
-            block_size: 2,
-        };
-
-        let mut grid = Grid::new(params);
 
         let square_1 = SquareCoords {
             x1: 0,
@@ -857,13 +850,6 @@ mod tests {
      */
     #[test]
     fn test_non_overlaping_squares() {
-
-        let params = GridParams {
-            blocks_per_street: 3,
-            block_size: 2,
-        };
-
-        let mut grid = Grid::new(params);
 
         let square_1 = SquareCoords {
             x1: 0,
