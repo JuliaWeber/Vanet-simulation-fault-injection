@@ -165,7 +165,42 @@ impl Simulator {
 
         println!("--- SIMULATION FINISHED ---");
         self.obu_manager.print_stats();
-        self.rsu_manager.check_obu_observations();
+
+        let mut true_positive = 0;
+        let mut false_positive = 0;
+        let mut true_negative = 0;
+        let mut false_negative = 0;
+
+        let rsu_faulty_obs = self.rsu_manager.find_faulty_obus();
+
+        for obu in self.obu_manager.obus.values() {
+            if obu.is_faulty() {
+                if rsu_faulty_obs.contains(&obu.get_id()) {
+                    true_positive += 1;
+                } else {
+                    false_negative += 1;
+                }
+            } else {
+                if rsu_faulty_obs.contains(&obu.get_id()) {
+                    false_positive += 1;
+                } else {
+                    true_negative += 1;
+                }
+            }
+        }
+
+        let detection_rate = (true_positive + true_negative) as f32 / (true_positive + true_negative + false_positive + false_negative) as f32;
+        let false_positive_rate = false_positive as f32 / (false_positive + true_negative) as f32;
+        let false_negative_rate = false_negative as f32 / (false_negative + true_positive) as f32;
+
+        println!("True Positive: {}", true_positive);
+        println!("False Positive: {}", false_positive);
+        println!("True Negative: {}", true_negative);
+        println!("False Negative: {}", false_negative);
+        println!("Detection Rate: {}", detection_rate);
+        println!("False Positive Rate: {}", false_positive_rate);
+        println!("False Negative Rate: {}", false_negative_rate);
+
     }
 
     /**

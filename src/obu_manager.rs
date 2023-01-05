@@ -138,6 +138,16 @@ impl OnBoardUnitManager {
     }
 
     /**
+     * Check if an obu is faulty.
+     */
+    pub fn is_obu_faulty(&self, id: u32) -> bool {
+        match self.obus.get(&id) {
+            Some(obu) => obu.is_faulty(),
+            None => panic!("obu with id {} does not exist", id),
+        }
+    }
+
+    /**
      * Collect messages from OBUs.
      */
     pub fn collect_messages(&mut self) -> Vec<Message> {

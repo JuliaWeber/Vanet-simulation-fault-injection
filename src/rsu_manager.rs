@@ -135,7 +135,7 @@ impl RoadSideUnitManager {
     /**
      * Check OBUs observations.
      */
-    pub fn check_obu_observations(&self) {
+    pub fn find_faulty_obus(&self) -> Vec<u32> {
         struct ObuRxStats {
             rx_count: u32,
             rx_error_count: u32,
@@ -144,6 +144,7 @@ impl RoadSideUnitManager {
         }
 
         let mut rx_stats: HashMap<u32, ObuRxStats> = HashMap::new();
+        let mut rx_errors: Vec<f32> = Vec::new();
 
         // for each round
         for i in 0..self.obu_observations.len() {
@@ -174,27 +175,59 @@ impl RoadSideUnitManager {
         for (_, stats) in rx_stats.iter_mut() {
             stats.rx_error_count = rounds - (stats.rx_count + stats.first_seen);
             stats.rx_error_rate = stats.rx_error_count as f32 / self.current_round as f32;
+
+            rx_errors.push(stats.rx_error_rate);
         }
 
-        // print the results
-        println!("--- RSU Manager Stats ---");
-        let mut counter = 0;
-        for (obu_id, stats) in rx_stats.iter() {
+        let b = 1.4628;
+        let ce = 3.0;
+        let median_absolute_deviation = b * RoadSideUnitManager::calculate_mad(&rx_errors);
 
-            if stats.rx_error_rate < 0.05 {
+        // calculate the median for the rx error rate values
+        rx_errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = rx_errors[rx_errors.len() / 2 - 1];
+        let tr = median + ce * median_absolute_deviation;
+
+        let mut faulty_obus: Vec<u32> = Vec::new();
+
+        for (obu_id, stats) in rx_stats.iter() {
+            
+            if stats.rx_error_rate < tr {
                 continue;
             }
 
-            counter += 1;
-
-            println!(
-                "OBU {} - rx_count: {}, rx_error_count: {}, rx_error_rate: {:.2}%",
-                obu_id, stats.rx_count, stats.rx_error_count, stats.rx_error_rate * 100.0
-            );
+            faulty_obus.push(*obu_id);
         }
-        println!("Count: {}", counter);
+
+        faulty_obus
 
     }
+
+    /**
+     * Calculate the Median Absolute Deviation (MAD) for a vector of f32 values.
+     */
+    pub fn calculate_mad(values: &Vec<f32>) -> f32 {
+
+        // sort the values
+        let mut values = values.clone();
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        // calculate the median
+        let median = values[values.len() / 2 - 1];
+
+        // calculate the absolute deviations
+        let mut abs_devs: Vec<f32> = Vec::new();
+        for value in values {
+            abs_devs.push((value - median).abs());
+        }
+
+        // sort the absolute deviations
+        abs_devs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        // calculate the median absolute deviation
+        abs_devs[abs_devs.len() / 2 - 1]
+    }
+
 }
 
 /***
