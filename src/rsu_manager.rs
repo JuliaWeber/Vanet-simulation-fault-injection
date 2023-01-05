@@ -190,11 +190,14 @@ impl RoadSideUnitManager {
 
         let mut faulty_obus: Vec<u32> = Vec::new();
 
+        println!("--- Fauty OBUs identified by the RSUs ---");
         for (obu_id, stats) in rx_stats.iter() {
             
             if stats.rx_error_rate < tr {
                 continue;
             }
+
+            println!("OBU {}: rx={} errors={} ({:.2}).", obu_id, stats.rx_count, stats.rx_error_count, stats.rx_error_rate * 100.0);
 
             faulty_obus.push(*obu_id);
         }

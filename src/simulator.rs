@@ -193,6 +193,7 @@ impl Simulator {
         let false_positive_rate = false_positive as f32 / (false_positive + true_negative) as f32;
         let false_negative_rate = false_negative as f32 / (false_negative + true_positive) as f32;
 
+        println!("--- FINAL STATS ---");
         println!("True Positive: {}", true_positive);
         println!("False Positive: {}", false_positive);
         println!("True Negative: {}", true_negative);
