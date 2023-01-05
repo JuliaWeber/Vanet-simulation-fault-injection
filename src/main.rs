@@ -17,7 +17,7 @@ fn main() {
     let obu_manager_params = ObuManagerParams {
         max_obus: 120,
         comms_range: 2,
-        tx_base_failure_rate: 0.04,
+        tx_base_failure_rate: 0.01,
         tx_faulty_obu_failure_rate: 0.1,
         faulty_obus: 20,
     };

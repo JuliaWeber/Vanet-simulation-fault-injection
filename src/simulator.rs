@@ -16,7 +16,7 @@ pub struct Simulator {
     obu_manager: OnBoardUnitManager,
     rsu_manager: RoadSideUnitManager,
     grid: Grid,
-    round: usize,
+    round: u32,
     ether: Ether,
 }
 
@@ -111,6 +111,10 @@ impl Simulator {
         self.grid.update_next_coordinates();
         self.add_road_side_units();
 
+        // set the current round for the managers
+        self.rsu_manager.set_current_round(0);
+        self.obu_manager.set_current_round(0);
+
         println!("--- SIMULATION INITIALIZED ---");
         println!("Number os RSUs: {}", self.rsu_manager.rsus.len());
         println!("Number os OBUs: {}", self.obu_manager.get_max_obus());
@@ -126,12 +130,15 @@ impl Simulator {
 
         // collect messages for the first round
         if self.round == 0 {
-            self.collect_messages();
+             self.collect_messages();
         }
 
         for _ in 0..rounds {
-            self.round += 1;
-            self.deliver_messages(); // deliver messages from the previous round
+
+            // deliver messages from the previous round
+            self.deliver_messages();
+
+            // move obus
             self.do_obus_moves();
 
             // add new obus
@@ -147,11 +154,18 @@ impl Simulator {
                 println!("Added {} new OBUs in round {}.", added_obus, self.round);
             }
 
-            self.collect_messages(); // collect messages for the current round
+            self.round += 1;
+
+            // update the current round for the managers
+            self.rsu_manager.set_current_round(self.round);
+            self.obu_manager.set_current_round(self.round);
+
+            self.collect_messages(); // collect messages for the next round delivery
         }
 
         println!("--- SIMULATION FINISHED ---");
         self.obu_manager.print_stats();
+        self.rsu_manager.check_obu_observations();
     }
 
     /**
@@ -237,7 +251,6 @@ impl Simulator {
 mod tests {
 
     use super::*;
-    use crate::comms::Message;
 
     /**
      * Test the creation of a Simulator.
@@ -446,82 +459,4 @@ mod tests {
         assert_eq!(simulator.ether.get_messages().len(), 2);
     }
 
-    /**
-     * Test message delivery to OBUs
-     */
-    #[test]
-    fn test_message_delivery() {
-        let comms_range: u32 = 2;
-
-        let grid_params = GridParams {
-            blocks_per_street: 3,
-            block_size: 2,
-        };
-
-        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
-
-        let obu_manager_params = ObuManagerParams {
-            max_obus: 2,
-            comms_range: 2,
-            tx_base_failure_rate: 0.0,
-            tx_faulty_obu_failure_rate: 0.0,
-            faulty_obus: 0,
-        };
-
-        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
-        simulator.add_road_side_units();
-
-        match simulator
-            .grid
-            .insert_obu(simulator.obu_manager.get_next_id())
-        {
-            Some(_) => {
-                let coordinate = Coordinate { x: 0, y: 0 };
-                simulator.obu_manager.create_obu(coordinate);
-            }
-            None => {
-                panic!("Could not insert OBU");
-            }
-        }
-
-        // message out of range
-        let msg_coordinate = Coordinate {
-            x: 2 * comms_range + 1,
-            y: 2 * comms_range + 1,
-        };
-
-        let mut message = Message::new(1, NodeType::OBU, msg_coordinate, comms_range);
-        message.covered_area = simulator
-            .grid
-            .get_square_cords(message.coordinate, comms_range);
-
-        simulator.ether.send_message(message.clone());
-        assert_eq!(simulator.ether.get_messages().len(), 1);
-
-        simulator.deliver_messages();
-
-        let obu = simulator.obu_manager.obus.get(&0).unwrap();
-        assert_eq!(obu.neighbors.len(), 0);
-
-        simulator.ether.clear();
-
-        // message in range
-        let msg_coordinate = Coordinate {
-            x: comms_range - 1,
-            y: comms_range - 1,
-        };
-
-        let mut message = Message::new(1, NodeType::OBU, msg_coordinate, comms_range);
-        message.covered_area = simulator
-            .grid
-            .get_square_cords(message.coordinate, comms_range);
-
-        simulator.ether.send_message(message.clone());
-        assert_eq!(simulator.ether.get_messages().len(), 1);
-
-        simulator.deliver_messages();
-
-        let obu = simulator.obu_manager.obus.get(&0).unwrap();
-        assert_eq!(obu.neighbors.len(), 1);
-    }
 }

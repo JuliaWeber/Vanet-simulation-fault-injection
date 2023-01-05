@@ -1,5 +1,5 @@
 use crate::comms::Message;
-use crate::grid::{Grid, Coordinate};
+use crate::grid::{Coordinate, Grid};
 use crate::obu::OnBoardUnit;
 use std::collections::HashMap;
 
@@ -28,8 +28,9 @@ pub struct OnBoardUnitManager {
     tx_faulty_obu_failure_rate: f32,
     faulty_obus: u32,
     faulty_obus_added: u32,
-    pub obus: HashMap<u32, OnBoardUnit>,
+    pub obus: HashMap<u32, OnBoardUnit>, // FIXME: make private
     stats: ObuManagerStats,
+    current_round: u32,
 }
 
 impl OnBoardUnitManager {
@@ -54,6 +55,7 @@ impl OnBoardUnitManager {
                 total_tx_count: 0,
                 total_tx_error_count: 0,
             },
+            current_round: 0,
         }
     }
 
@@ -87,6 +89,13 @@ impl OnBoardUnitManager {
     pub fn get_obus_count(&self) -> u32 {
         let num_obus = self.obus.len() as u32;
         num_obus
+    }
+
+    /**
+     * Set the current round.
+     */
+    pub fn set_current_round(&mut self, round: u32) {
+        self.current_round = round;
     }
 
     /**
@@ -169,12 +178,10 @@ impl OnBoardUnitManager {
      * Deliver messages to OBUs.
      */
     pub fn deliver_messages(&mut self, grid: &Grid, messages: &Vec<Message>) {
-
         let comms_range = self.comms_range;
 
         // iterate over all obus
         for obu in self.obus.values_mut() {
-
             // clear the obu neighbors
             obu.clear_neighbors();
 
@@ -197,20 +204,20 @@ impl OnBoardUnitManager {
     pub fn print_stats(&self) {
         println!("--- OBU Manager Stats ---");
         println!(
-            "     Total TX: {} / errors {} ({}%)",
+            "     Total TX: {} / errors {} ({:.2}%)",
             self.stats.total_tx_count,
             self.stats.total_tx_error_count,
             self.stats.total_tx_error_count as f32 / self.stats.total_tx_count as f32 * 100.0
         );
         println!(
-            "Normal OBU TX: {} / errors {} ({}%)",
+            "Normal OBU TX: {} / errors {} ({:.2}%)",
             self.stats.normal_obu_tx_count,
             self.stats.normal_obu_tx_error_count,
             self.stats.normal_obu_tx_error_count as f32 / self.stats.normal_obu_tx_count as f32
                 * 100.0
         );
         println!(
-            "Faulty OBU TX: {} / errors {} ({}%)",
+            "Faulty OBU TX: {} / errors {} ({:.2}%)",
             self.stats.faulty_obu_tx_count,
             self.stats.faulty_obu_tx_error_count,
             self.stats.faulty_obu_tx_error_count as f32 / self.stats.faulty_obu_tx_count as f32
@@ -396,5 +403,4 @@ mod tests {
     }
 
     // TODO: Move message deliver tests from simulator.rs to here
-
 }

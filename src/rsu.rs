@@ -6,7 +6,7 @@ pub struct RoadSideUnit {
     id: u32,
     coordinate: Coordinate,
     covered_area: SquareCoords,
-    pub neighbors: Vec<NeighborEntry>,
+    neighbors: Vec<NeighborEntry>,
 }
 
 impl RoadSideUnit {
@@ -65,6 +65,13 @@ impl RoadSideUnit {
             }
             _ => {}
         }
+    }
+
+    /**
+     * Get the neighbors
+     */
+    pub fn get_neighbors(&self) -> &Vec<NeighborEntry> {
+        self.neighbors.as_ref()
     }
 
     /**
