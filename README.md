@@ -12,12 +12,13 @@ Download and installation instructions: <https://www.rust-lang.org/tools/install
 
 Download and installation instructions: <https://git-scm.com/downloads>
 
-### 3. Clone rusted_vanet4j repo
+### 3. Clone repository
 
     git clone https://github.com/JuliaWeber/Vanet-simulation-fault-injection.git
+    
 ### 4. Run tests
 
-Enter the clonned directory (vanet4j) directory and run:
+Enter the clonned directory (VanetFI) directory and run:
 
     cargo test
 
