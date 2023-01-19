@@ -5,6 +5,10 @@ use vanet4j::obu_manager::ObuManagerParams;
 
 fn main() {
 
+    /**
+     * Parameters for experiments are adjusted here
+     */
+    
     let grid_params = GridParams {
         blocks_per_street: 25,
         block_size: 3,
