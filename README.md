@@ -1,6 +1,6 @@
-# Vanet4J
+# VanetFI
 
-A VANET simulator for Julia
+A VANET simulator fault injection
 
 ## How to use it?
 
@@ -14,8 +14,7 @@ Download and installation instructions: <https://git-scm.com/downloads>
 
 ### 3. Clone rusted_vanet4j repo
 
-    git clone https://vsserafim@bitbucket.org/serafim-pessoal/vanet4j.git
-
+    git clone https://github.com/JuliaWeber/Vanet-simulation-fault-injection.git
 ### 4. Run tests
 
 Enter the clonned directory (vanet4j) directory and run:
