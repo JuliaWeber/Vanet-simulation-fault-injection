@@ -12,7 +12,7 @@ pub struct OnBoardUnit {
 
 impl OnBoardUnit {
     /**
-     * Create a new OnBoardUnit
+     * Create a new OnBoardUnit (OBU)
      */
     pub fn new(id: u32, coordinate: Coordinate, tx_failure_rate: f32, is_faulty: bool) -> OnBoardUnit {
         OnBoardUnit {
@@ -25,42 +25,42 @@ impl OnBoardUnit {
     }
 
     /**
-     * Get the id of the OnBoardUnit
+     * Get the id of the OBU
      */
     pub fn get_id(&self) -> u32 {
         self.id
     }
 
     /**
-     * Set the coordinate of the OnBoardUnit
+     * Set the coordinate of the OBU
      */
     pub fn set_coordinate(&mut self, position: Coordinate) {
         self.coordinate = position;
     }
 
     /**
-     * Get the coordinate of the OnBoardUnit
+     * Get the coordinate of the OBU
      */
     pub fn get_coordinate(&self) -> Coordinate {
         self.coordinate.clone()
     }
 
     /**
-     * Get the tx failure rate of the OnBoardUnit
+     * Get the tx failure rate of the OBU
      */
     pub fn get_tx_failure_rate(&self) -> f32 {
         self.tx_failure_rate
     }
 
     /**
-     * Get the faulty status of the OnBoardUnit
+     * Get the faulty status of the OBU
      */
     pub fn is_faulty(&self) -> bool {
         self.is_faulty
     }
 
     /**
-     * Get a message from this obu
+     * Get a message from this OBU
      */
     pub fn get_message(&self) -> Option<Message> {
 
