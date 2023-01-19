@@ -81,7 +81,7 @@ impl Ether {
 }
 
 /***
- * TESTS MODULE
+ * TESTS MODULE 
  */
 #[cfg(test)]
 mod tests {
