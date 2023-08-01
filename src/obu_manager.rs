@@ -1,3 +1,4 @@
+use crate::comms::Ether;
 use crate::comms::Message;
 use crate::grid::{Coordinate, Grid};
 use crate::obu::OnBoardUnit;
@@ -8,6 +9,8 @@ pub struct ObuManagerParams {
     pub comms_range: u32,
     pub tx_base_failure_rate: f32,
     pub tx_faulty_obu_failure_rate: f32,
+    pub gps_failure_rate: f32,
+    pub gps_faulty_obu_failure_rate: f32,
     pub faulty_obus: u32,
 }
 
@@ -26,26 +29,35 @@ pub struct OnBoardUnitManager {
     comms_range: u32,
     tx_base_failure_rate: f32,
     tx_faulty_obu_failure_rate: f32,
+    gps_failure_rate: f32,
+    gps_faulty_obu_failure_rate: f32,
     faulty_obus: u32,
     faulty_obus_added: u32,
     pub obus: HashMap<u32, OnBoardUnit>, // FIXME: make private
     stats: ObuManagerStats,
     current_round: u32,
+    grid_dimension: u32,
 }
 
+/**
+ * OnBoardUnitManager implementation.
+ */
 impl OnBoardUnitManager {
     /**
      * Creates a new OnBoardUnitManager.
      */
-    pub fn new(params: ObuManagerParams) -> OnBoardUnitManager {
+    pub fn new(params: ObuManagerParams, grid_dimension: u32) -> OnBoardUnitManager {
         OnBoardUnitManager {
             next_id: 0,
             max_obus: params.max_obus,
             comms_range: params.comms_range,
             tx_base_failure_rate: params.tx_base_failure_rate,
             tx_faulty_obu_failure_rate: params.tx_faulty_obu_failure_rate,
+            gps_failure_rate: params.gps_failure_rate,
+            gps_faulty_obu_failure_rate: params.gps_faulty_obu_failure_rate,
             faulty_obus: params.faulty_obus,
             faulty_obus_added: 0,
+            grid_dimension,
             obus: HashMap::new(),
             stats: ObuManagerStats {
                 normal_obu_tx_count: 0,
@@ -102,23 +114,28 @@ impl OnBoardUnitManager {
      * Creates a new OnBoardUnit
      */
     pub fn create_obu(&mut self, coordinate: Coordinate) -> Option<u32> {
+        // Get the next available id
         let id = self.next_id;
 
-        // check if the maximum number of obus has been reached
-        if self.obus.len() as u32 >= self.max_obus {
+        // Check if the maximum number of OBUs has been reached.
+        if self.obus.len() >= self.max_obus as usize {
             return None;
         }
 
-        // by default use the base failure rate
+        // By default, use the base failures rates.
         let mut tx_failure_rate = self.tx_base_failure_rate;
+        let mut gps_failure_rate = self.gps_failure_rate;
+
+        // By default, the OBU is not faulty.
         let mut is_faulty = false;
 
-        // check if the obu is a faulty one
+        // if the number of faulty obus is greater than 0 and the number of faulty obus added is
+        // less than the number of faulty obus, then add a faulty obu
         if self.faulty_obus > 0 && self.faulty_obus_added < self.faulty_obus {
-            let modulus = self.max_obus / self.faulty_obus;
-            if ((self.obus.len() as u32 + 1) % modulus) == 0 {
+            if (self.obus.len() as u32 + 1) % (self.max_obus / self.faulty_obus) == 0 {
                 // adjust the failure rate
                 tx_failure_rate = self.tx_faulty_obu_failure_rate;
+                gps_failure_rate = self.gps_faulty_obu_failure_rate;
                 is_faulty = true;
                 self.faulty_obus_added += 1;
             }
@@ -127,7 +144,15 @@ impl OnBoardUnitManager {
         // create and insert obu in the hashmap
         self.obus.insert(
             id,
-            OnBoardUnit::new(id, coordinate, tx_failure_rate, is_faulty),
+            OnBoardUnit::new(
+                id,
+                coordinate,
+                self.comms_range,
+                tx_failure_rate,
+                gps_failure_rate,
+                is_faulty,
+                self.grid_dimension,
+            ),
         );
 
         // increment id counter
@@ -151,56 +176,56 @@ impl OnBoardUnitManager {
      * Collect messages from OBUs.
      */
     pub fn collect_messages(&mut self) -> Vec<Message> {
+        // Initialize the messages vector
         let mut messages = Vec::new();
 
-        // iterate over all obus
+        // Iterate over all obus
         for obu in self.obus.values_mut() {
+            // Update the stats
             self.stats.total_tx_count += 1;
-
-            if obu.is_faulty() {
+            let is_faulty = obu.is_faulty();
+            if is_faulty {
                 self.stats.faulty_obu_tx_count += 1;
             } else {
                 self.stats.normal_obu_tx_count += 1;
             }
 
-            match obu.get_message() {
-                Some(mut message) => {
-                    // update the range and add it to the returned vector
-                    message.comms_range = self.comms_range;
-                    messages.push(message);
-                }
-                None => {
-                    self.stats.total_tx_error_count += 1;
-
-                    if obu.is_faulty() {
-                        self.stats.faulty_obu_tx_error_count += 1;
-                    } else {
-                        self.stats.normal_obu_tx_error_count += 1;
-                    }
+            // Try to get a message from the obu
+            if let Some(message) = obu.get_message() {
+                // If a message was returned, update the range and add it to the returned vector
+                messages.push(message);
+            } else {
+                // If no message was returned, update the stats accordingly
+                self.stats.total_tx_error_count += 1;
+                if is_faulty {
+                    self.stats.faulty_obu_tx_error_count += 1;
+                } else {
+                    self.stats.normal_obu_tx_error_count += 1;
                 }
             }
         }
 
-        return messages;
+        // Return the messages
+        messages
     }
 
     /**
      * Deliver messages to OBUs.
      */
-    pub fn deliver_messages(&mut self, grid: &Grid, messages: &Vec<Message>) {
-        let comms_range = self.comms_range;
-
-        // iterate over all obus
+    pub fn deliver_messages(&mut self, messages: &Vec<Message>) {
+        // Iterate over all obus
         for obu in self.obus.values_mut() {
-            // clear the obu neighbors
+            // Clear the obu neighbors
             obu.clear_neighbors();
 
-            // calculate the coverage area of the obu
-            let obu_coverage = grid.get_square_cords(obu.get_coordinate(), comms_range);
-
-            // for each message check if it is in the coverage area of the obu
+            // Iterate over all messages
             for message in messages {
-                if Grid::check_overlaping_squares(obu_coverage, message.covered_area) {
+                // Check if the message can reach the obu
+                if Ether::is_transmission_possible(
+                    message.phy_coord,
+                    message.phy_range,
+                    obu.get_coordinate(),
+                ) {
                     // deliver the message to the obu
                     obu.receive_message(message.clone());
                 }
@@ -255,10 +280,12 @@ mod tests {
             comms_range: 1,
             tx_base_failure_rate: 0.0,
             tx_faulty_obu_failure_rate: 0.0,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 0,
         };
 
-        let obu_manager = OnBoardUnitManager::new(params);
+        let obu_manager = OnBoardUnitManager::new(params, 0);
         assert_eq!(obu_manager.next_id, 0);
         assert_eq!(obu_manager.obus.len(), 0);
     }
@@ -273,10 +300,12 @@ mod tests {
             comms_range: 1,
             tx_base_failure_rate: 0.01,
             tx_faulty_obu_failure_rate: 0.1,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 20,
         };
 
-        let mut obu_manager = OnBoardUnitManager::new(params);
+        let mut obu_manager = OnBoardUnitManager::new(params, 0);
 
         // add 4 obus
         for _ in 0..4 {
@@ -335,10 +364,12 @@ mod tests {
             comms_range: 1,
             tx_base_failure_rate: 0.01,
             tx_faulty_obu_failure_rate: 0.1,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 13,
         };
 
-        let mut obu_manager = OnBoardUnitManager::new(params);
+        let mut obu_manager = OnBoardUnitManager::new(params, 0);
 
         // add 6 obus
         for _ in 0..6 {
@@ -397,10 +428,12 @@ mod tests {
             comms_range: 2,
             tx_base_failure_rate: 0.0,
             tx_faulty_obu_failure_rate: 0.0,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 0,
         };
 
-        let mut obu_manager = OnBoardUnitManager::new(params);
+        let mut obu_manager = OnBoardUnitManager::new(params, 0);
 
         obu_manager.create_obu(Coordinate { x: 1, y: 2 });
         obu_manager.create_obu(Coordinate { x: 1, y: 3 });
