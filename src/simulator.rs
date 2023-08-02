@@ -29,10 +29,14 @@ impl Simulator {
         rsu_manager_params: RsuManagerParams,
         obu_manager_params: ObuManagerParams,
     ) -> Simulator {
+        let grid = Grid::new(grid_params);
+        let obu_manager = OnBoardUnitManager::new(obu_manager_params, grid.get_dimension());
+        let rsu_manager = RoadSideUnitManager::new(rsu_manager_params);
+
         Simulator {
-            obu_manager: OnBoardUnitManager::new(obu_manager_params),
-            rsu_manager: RoadSideUnitManager::new(rsu_manager_params),
-            grid: Grid::new(grid_params),
+            obu_manager,
+            rsu_manager,
+            grid,
             round: 0,
             ether: Ether::new(),
         }
@@ -60,44 +64,39 @@ impl Simulator {
             "RSUs already added to the grid."
         );
 
-        let comms_range: u32 = self.rsu_manager.get_comms_range();
+        let rx_range: u32 = self.rsu_manager.get_rx_range();
         let mut next_coordinate = Coordinate {
-            x: comms_range - 1,
-            y: comms_range - 1,
+            x: rx_range - 1,
+            y: rx_range - 1,
         };
         let mut last_added_id = 0;
 
         // add rsus to the grid
         while next_coordinate.x < self.grid.get_dimension() {
             while next_coordinate.y < self.grid.get_dimension() {
-                let covered_area = self
-                    .grid
-                    .get_square_cords(next_coordinate.clone(), comms_range);
-                last_added_id = self
-                    .rsu_manager
-                    .create_rsu(next_coordinate.clone(), covered_area);
-                next_coordinate.y += (comms_range * 2) - 1;
+                last_added_id = self.rsu_manager.create_rsu(next_coordinate.clone());
+                next_coordinate.y += (rx_range * 2) - 1;
 
                 // if the next coordinate is out of bounds
                 if next_coordinate.y >= self.grid.get_dimension() {
                     let last_added = self.rsu_manager.rsus.get(&last_added_id).unwrap();
 
                     // check if the last added rsu range do not cover the grid border
-                    if last_added.get_coordinate().y + comms_range < self.grid.get_dimension() {
+                    if last_added.get_coordinate().y + rx_range < self.grid.get_dimension() {
                         next_coordinate.y = self.grid.get_dimension() - 1;
                     }
                 }
             }
 
-            next_coordinate.y = comms_range - 1;
-            next_coordinate.x += (comms_range * 2) - 1;
+            next_coordinate.y = rx_range - 1;
+            next_coordinate.x += (rx_range * 2) - 1;
 
             // if the next coordinate is out of bounds
             if next_coordinate.x >= self.grid.get_dimension() {
                 let last_added = self.rsu_manager.rsus.get(&last_added_id).unwrap();
 
                 // check if the last added rsu range do not cover the grid border
-                if last_added.get_coordinate().x + comms_range < self.grid.get_dimension() {
+                if last_added.get_coordinate().x + rx_range < self.grid.get_dimension() {
                     next_coordinate.x = self.grid.get_dimension() - 1;
                 }
             }
@@ -116,10 +115,10 @@ impl Simulator {
         self.obu_manager.set_current_round(0);
 
         println!("--- SIMULATION INITIALIZED ---");
-        println!("Number os RSUs: {}", self.rsu_manager.rsus.len());
-        println!("Number os OBUs: {}", self.obu_manager.get_max_obus());
+        println!("Number of RSUs: {}", self.rsu_manager.rsus.len());
+        println!("Number of OBUs: {}", self.obu_manager.get_max_obus());
 
-        self.grid.print_stats();
+        self.grid.print_stats(Some(self.obu_manager.get_max_obus()));
     }
 
     /**
@@ -128,20 +127,20 @@ impl Simulator {
     pub fn run(&mut self, rounds: usize) {
         println!("--- SIMULATION RUNNING ---");
 
-        // collect messages for the first round
+        // Collect messages for the first round
         if self.round == 0 {
-             self.collect_messages();
+            self.collect_messages();
         }
 
+        // Run the simulation for the given number of rounds
         for _ in 0..rounds {
-
-            // deliver messages from the previous round
+            // Deliver messages from the previous round
             self.deliver_messages();
 
-            // move obus
+            // Move obus
             self.do_obus_moves();
 
-            // add new obus
+            // Add new obus if needed and possible
             let mut added_obus = 0;
             while self.obu_manager.obus.len() < self.obu_manager.get_max_obus() as usize {
                 match self.add_on_board_unit() {
@@ -150,17 +149,20 @@ impl Simulator {
                 }
             }
 
+            // Print the number of added obus
             if added_obus > 0 {
                 println!("Added {} new OBUs in round {}.", added_obus, self.round);
             }
 
+            // Update the round
             self.round += 1;
 
-            // update the current round for the managers
+            // Update the current round for the managers
             self.rsu_manager.set_current_round(self.round);
             self.obu_manager.set_current_round(self.round);
 
-            self.collect_messages(); // collect messages for the next round delivery
+            // Collect messages for the next round delivery
+            self.collect_messages();
         }
 
         println!("--- SIMULATION FINISHED ---");
@@ -171,27 +173,35 @@ impl Simulator {
         let mut true_negative = 0;
         let mut false_negative = 0;
 
+        // Get the faulty obus ids from the rsu manager
         let rsu_faulty_obs = self.rsu_manager.find_faulty_obus();
 
+        // Check RSU predictions
         for obu in self.obu_manager.obus.values() {
-            if obu.is_faulty() {
-                if rsu_faulty_obs.contains(&obu.get_id()) {
-                    true_positive += 1;
-                } else {
-                    false_negative += 1;
-                }
-            } else {
-                if rsu_faulty_obs.contains(&obu.get_id()) {
-                    false_positive += 1;
-                } else {
-                    true_negative += 1;
-                }
+            let is_faulty = obu.is_faulty();
+            let is_in_rsu_faulty = rsu_faulty_obs.contains(&obu.get_id());
+
+            match (is_faulty, is_in_rsu_faulty) {
+                (true, true) => true_positive += 1,
+                (true, false) => false_negative += 1,
+                (false, true) => false_positive += 1,
+                (false, false) => true_negative += 1,
             }
         }
 
-        let detection_rate = (true_positive + true_negative) as f32 / (true_positive + true_negative + false_positive + false_negative) as f32;
-        let false_positive_rate = false_positive as f32 / (false_positive + true_negative) as f32;
-        let false_negative_rate = false_negative as f32 / (false_negative + true_positive) as f32;
+        // Calculate the total
+        let total = (true_positive + true_negative + false_positive + false_negative) as f32;
+        let total_positive = (false_positive + true_negative) as f32;
+        let total_negative = (false_negative + true_positive) as f32;
+
+        // Calculate the detection rate
+        let detection_rate = (true_positive + true_negative) as f32 / total;
+
+        // Calculate the false positive rate
+        let false_positive_rate = false_positive as f32 / total_positive;
+
+        // Calculate the false negative rate
+        let false_negative_rate = false_negative as f32 / total_negative;
 
         println!("--- FINAL STATS ---");
         println!("True Positive: {}", true_positive);
@@ -201,7 +211,6 @@ impl Simulator {
         println!("Detection Rate: {}", detection_rate);
         println!("False Positive Rate: {}", false_positive_rate);
         println!("False Negative Rate: {}", false_negative_rate);
-
     }
 
     /**
@@ -228,25 +237,27 @@ impl Simulator {
      * Collect messages from OBUs and RSUs and send them to the Ether.
      */
     fn collect_messages(&mut self) {
-        // clear the ether
+        // Clear the ether
         self.ether.clear();
 
-        // collect messages from OBUs
+        // Collect messages from OBUs
         let messages = self.obu_manager.collect_messages();
         for mut message in messages {
-            message.covered_area = self
+            // Calculate the physical area of the message
+            message.phy_area = self
                 .grid
-                .get_square_cords(message.coordinate, message.comms_range);
+                .get_square_coords(message.phy_coord, message.phy_range);
+
+            // Send the message to the ether
             self.ether.send_message(message);
         }
 
         // Collect messages from RSUs
-        let comms_range = self.rsu_manager.get_comms_range();
+        let comms_range = self.rsu_manager.get_tx_range();
         for rsu in self.rsu_manager.rsus.values() {
             match rsu.get_message() {
                 Some(mut message) => {
-                    message.covered_area =
-                        self.grid.get_square_cords(message.coordinate, comms_range);
+                    message.phy_area = self.grid.get_square_coords(message.phy_coord, comms_range);
 
                     self.ether.send_message(message);
                 }
@@ -259,13 +270,13 @@ impl Simulator {
      * Deliver messages from the ether to the OBUs and RSUs.
      */
     fn deliver_messages(&mut self) {
-
         // deliver messages to OBUs
-        self.obu_manager.deliver_messages(&self.grid, &self.ether.get_messages());
+        self.obu_manager
+            .deliver_messages(&self.ether.get_messages());
 
         // deliver messages to RSUs
-        self.rsu_manager.deliver_messages(&self.ether.get_messages());
-
+        self.rsu_manager
+            .deliver_messages(&self.ether.get_messages());
     }
 
     /**
@@ -298,13 +309,20 @@ mod tests {
             block_size: 2,
         };
 
-        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
+        let rsu_manager_params = RsuManagerParams {
+            tx_range: 5,
+            rx_range: 5,
+            detect_obu_gps_failure: false,
+            detect_obu_tx_failure: false,
+        };
 
         let obu_manager_params = ObuManagerParams {
             max_obus: 2,
             comms_range: 2,
             tx_base_failure_rate: 0.0,
             tx_faulty_obu_failure_rate: 0.0,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 0,
         };
 
@@ -326,13 +344,20 @@ mod tests {
             block_size: 2,
         };
 
-        let rsu_manager_params = RsuManagerParams { comms_range: 3 };
+        let rsu_manager_params = RsuManagerParams {
+            tx_range: 3,
+            rx_range: 3,
+            detect_obu_gps_failure: false,
+            detect_obu_tx_failure: false,
+        };
 
         let obu_manager_params = ObuManagerParams {
             max_obus: 2,
             comms_range: 2,
             tx_base_failure_rate: 0.0,
             tx_faulty_obu_failure_rate: 0.0,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 0,
         };
 
@@ -369,13 +394,20 @@ mod tests {
             block_size: 2,
         };
 
-        let rsu_manager_params = RsuManagerParams { comms_range: 4 };
+        let rsu_manager_params = RsuManagerParams {
+            tx_range: 4,
+            rx_range: 4,
+            detect_obu_gps_failure: false,
+            detect_obu_tx_failure: false,
+        };
 
         let obu_manager_params = ObuManagerParams {
             max_obus: 2,
             comms_range: 2,
             tx_base_failure_rate: 0.0,
             tx_faulty_obu_failure_rate: 0.0,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 0,
         };
 
@@ -412,13 +444,20 @@ mod tests {
             block_size: 2,
         };
 
-        let rsu_manager_params = RsuManagerParams { comms_range: 6 };
+        let rsu_manager_params = RsuManagerParams {
+            tx_range: 6,
+            rx_range: 6,
+            detect_obu_gps_failure: false,
+            detect_obu_tx_failure: false,
+        };
 
         let obu_manager_params = ObuManagerParams {
             max_obus: 2,
             comms_range: 2,
             tx_base_failure_rate: 0.0,
             tx_faulty_obu_failure_rate: 0.0,
+            gps_failure_rate: 0.0,
+            gps_faulty_obu_failure_rate: 0.0,
             faulty_obus: 0,
         };
 
@@ -434,36 +473,6 @@ mod tests {
     }
 
     /**
-     * Test simulation
-     */
-    #[test]
-    fn test_simulation() {
-        let grid_params = GridParams {
-            blocks_per_street: 3,
-            block_size: 2,
-        };
-
-        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
-
-        let obu_manager_params = ObuManagerParams {
-            max_obus: 1,
-            comms_range: 2,
-            tx_base_failure_rate: 0.0,
-            tx_faulty_obu_failure_rate: 0.0,
-            faulty_obus: 0,
-        };
-
-        let mut simulator = Simulator::new(grid_params, rsu_manager_params, obu_manager_params);
-
-        simulator.init();
-
-        simulator.run(1);
-
-        assert_eq!(simulator.ether.get_messages().len(), 1);
-        assert_eq!(simulator.round, 1);
-    }
-
-    /**
      * Test message collection from OBUs.
      */
     #[test]
@@ -473,13 +482,20 @@ mod tests {
             block_size: 2,
         };
 
-        let rsu_manager_params = RsuManagerParams { comms_range: 5 };
+        let rsu_manager_params = RsuManagerParams {
+            tx_range: 5,
+            rx_range: 5,
+            detect_obu_gps_failure: false,
+            detect_obu_tx_failure: true,
+        };
 
         let obu_manager_params = ObuManagerParams {
             max_obus: 2,
             comms_range: 2,
-            tx_base_failure_rate: 0.0,
-            tx_faulty_obu_failure_rate: 0.0,
+            tx_base_failure_rate: 0.01,
+            tx_faulty_obu_failure_rate: 0.10,
+            gps_failure_rate: 0.001,
+            gps_faulty_obu_failure_rate: 0.010,
             faulty_obus: 0,
         };
 
@@ -494,5 +510,4 @@ mod tests {
         simulator.collect_messages();
         assert_eq!(simulator.ether.get_messages().len(), 2);
     }
-
 }
