@@ -1,6 +1,6 @@
-# VanetFI
+# CAVSim
 
-A VANET simulator fault injection
+Communication anomalies in VANET Simulator
 
 ## How to use it?
 
