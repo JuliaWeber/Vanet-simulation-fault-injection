@@ -160,7 +160,7 @@ impl OnBoardUnitManager {
 
         // return the id of the created obu
         Some(id)
-    }
+    }fn create_obu
 
     /**
      * Check if an obu is faulty.
@@ -207,7 +207,7 @@ impl OnBoardUnitManager {
 
         // Return the messages
         messages
-    }
+    }fn collect_messages
 
     /**
      * Deliver messages to OBUs.
@@ -259,7 +259,7 @@ impl OnBoardUnitManager {
                 * 100.0
         );
     }
-}
+}impl OnBoardUnitManager
 
 /***
  * TESTS MODULE
@@ -446,4 +446,4 @@ mod tests {
     }
 
     // TODO: Move message deliver tests from simulator.rs to here
-}
+}mod tests
