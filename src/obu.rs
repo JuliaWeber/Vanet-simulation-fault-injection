@@ -111,7 +111,7 @@ impl OnBoardUnit {
             self.coordinate.clone(),
             self.tx_range,
         ))
-    }
+    }fn get_message
 
     /**
      * Receive a message from the ether
