@@ -6,6 +6,9 @@
  */
 use std::cmp::min;
 
+/**
+ * SquareCoords represents the coordinates of a square.
+ */
 #[derive(Clone, Copy, Debug)]
 pub struct SquareCoords {
     pub x1: u32,
@@ -14,39 +17,57 @@ pub struct SquareCoords {
     pub y2: u32,
 }
 
+/**
+ * Coordinate represents the coordinates of a cell.
+ */
 #[derive(Clone, Copy, Debug)]
 pub struct Coordinate {
     pub x: u32,
     pub y: u32,
 }
 
+/**
+ * FlowDirection represents the flow direction of a street.
+ */
 #[derive(Debug, PartialEq)]
 enum FlowDirection {
     FromZero, // left -> right / top -> bottom
     ToZero,   // right -> left / bottom -> top
 }
 
+/**
+ * CellState represents the state of a cell.
+ */
 #[derive(Clone, Debug)]
 pub struct CellState {
-    pub id: u32,                     // unique id
+    pub id: u32,                       // unique id
     is_street: bool,                   // Is this cell a street?
     pub obu_id: Option<u32>,           // If this cell is occupied by an OBU, what is its ID?
     next_coordinates: Vec<Coordinate>, // If this cell is a street, what are the next possible coordinates?
 }
 
+/**
+ * GridParams represents the parameters used to create a new grid.
+ */
 pub struct GridParams {
     pub blocks_per_street: u32,
     pub block_size: u32,
 }
 
+/**
+ * Grid represents the simulated environment.
+ */
 pub struct Grid {
-    block_size: u32,
-    blocks_per_street: u32,
+    block_size: u32,            // The size of each block
+    blocks_per_street: u32,     // The number of blocks per street
     cells: Vec<Vec<CellState>>, // The grid itself
-    dimension: u32,           // The dimension of the grid
+    dimension: u32,             // The dimension of the grid
     street_cells: u32,          // The number of street cells
 }
 
+/**
+ * Grid implementation.
+ */
 impl Grid {
     /**
      * Create a new grid with the given number of blocks per street and the size of
@@ -54,35 +75,45 @@ impl Grid {
      * streets on all sides.
      */
     pub fn new(params: GridParams) -> Grid {
+        // Get the block size and calculate blocks per street from the parameters.
         let block_size = params.block_size;
         let blocks_per_street = params.blocks_per_street;
 
-        // calculate grid dimension considering the blocks and the streets
+        // Calculate the dimension of the grid based on the block size and blocks per street.
         let dimension: u32 = blocks_per_street * block_size + blocks_per_street + 1;
 
-        let street_cells = (dimension * dimension) as u32 - (blocks_per_street * blocks_per_street * block_size * block_size) as u32;
+        // Calculate the number of street cells.
+        let street_cells = (dimension * dimension) as u32
+            - (blocks_per_street * blocks_per_street * block_size * block_size) as u32;
 
-        // counter for cell unique id
+        // Initialize the cell id counter.
         let mut id = 0;
 
-        // create the grid vector of cells, marking the streets
+        // Create the grid vector of cells, marking the streets.
         let mut cells = Vec::new();
         for i in 0..dimension {
             let mut row = Vec::new();
             for j in 0..dimension {
+                // Determine if the cell is part of a street.
                 let is_street = i % (block_size + 1) == 0 || j % (block_size + 1) == 0;
+
+                // Create a new `CellState` instance and add it to the row vector.
                 row.push(CellState {
                     id,
                     is_street,
                     obu_id: None,
                     next_coordinates: Vec::new(),
                 });
-                // increment the id counter
+
+                // Increment the cell id counter.
                 id += 1;
             }
+
+            // Add the row to the grid vector.
             cells.push(row);
         }
 
+        // Create and returns a new `Grid` instance with the calculated values.
         Grid {
             block_size,
             blocks_per_street,
@@ -110,18 +141,9 @@ impl Grid {
      * Get flow direction for a given street id.
      */
     fn get_flow_direction(&self, street_id: u32, is_column: bool) -> FlowDirection {
-        if street_id % 2 == 0 {
-            if is_column {
-                FlowDirection::ToZero
-            } else {
-                FlowDirection::FromZero
-            }
-        } else {
-            if is_column {
-                FlowDirection::FromZero
-            } else {
-                FlowDirection::ToZero
-            }
+        match (street_id % 2, is_column) {
+            (0, true) | (1, false) => FlowDirection::ToZero,
+            _ => FlowDirection::FromZero,
         }
     }
 
@@ -129,12 +151,15 @@ impl Grid {
      * Get the next possible coordinates from a given coordinate.
      */
     fn get_next_coordinates(&mut self, coordinate: Coordinate) -> Vec<Coordinate> {
-        // check if the next coordinates were already calculated for all cells
-        if self.cells[0][0].next_coordinates.len() == 0 {
+        // Check if the next coordinates were already calculated for any cell
+        if self.cells[coordinate.x as usize][coordinate.y as usize]
+            .next_coordinates
+            .is_empty()
+        {
             self.update_next_coordinates();
         }
 
-        // get the next coordinates from the cell state
+        // Get the next coordinates from the cell state
         self.cells[coordinate.x as usize][coordinate.y as usize]
             .next_coordinates
             .clone()
@@ -270,7 +295,8 @@ impl Grid {
         current_cell_state.obu_id = None;
 
         // update the current cell state
-        self.cells[current_coordinate.x as usize][current_coordinate.y as usize] = current_cell_state;
+        self.cells[current_coordinate.x as usize][current_coordinate.y as usize] =
+            current_cell_state;
 
         // update the next cell state
         self.cells[next_coordinate.x as usize][next_coordinate.y as usize] = next_cell_state;
@@ -281,22 +307,20 @@ impl Grid {
     /**
      * Calculate square coordinates for a given coordinate and range.
      */
-    pub fn get_square_cords(&self, coordinate: Coordinate, range: u32) -> SquareCoords {
-        let mut x1: u32 = 0;
-        let mut y1: u32 = 0;
+    pub fn get_square_coords(&self, coordinate: Coordinate, range: u32) -> SquareCoords {
+        let range = range.saturating_sub(1);
 
-        let range = range - 1;
+        let x1 = std::cmp::max(0, coordinate.x.saturating_sub(range));
+        let y1 = std::cmp::max(0, coordinate.y.saturating_sub(range));
 
-        if (coordinate.x as i32 - range as i32) > 0 {
-            x1 = coordinate.x - range;
-        }
-
-        if (coordinate.y as i32 - range as i32) > 0 {
-            y1 = coordinate.y - range;
-        }
-
-        let x2 = min(self.dimension - 1, coordinate.x + range);
-        let y2 = min(self.dimension - 1, coordinate.y + range);
+        let x2 = min(
+            self.dimension.saturating_sub(1),
+            coordinate.x.saturating_add(range),
+        );
+        let y2 = min(
+            self.dimension.saturating_sub(1),
+            coordinate.y.saturating_add(range),
+        );
 
         SquareCoords { x1, y1, x2, y2 }
     }
@@ -304,24 +328,14 @@ impl Grid {
     /**
      * Check overlaping squares
      */
-    pub fn check_overlaping_squares(
-        square1: SquareCoords,
-        square2: SquareCoords,
-    ) -> bool {
-        let x1 = square1.x1;
-        let y1 = square1.y1;
-        let x2 = square1.x2;
-        let y2 = square1.y2;
-
-        let x3 = square2.x1;
-        let y3 = square2.y1;
-        let x4 = square2.x2;
-        let y4 = square2.y2;
-
-        if x1 > x4 || x2 < x3 || y1 > y4 || y2 < y3 {
+    pub fn check_overlapping_squares(square1: SquareCoords, square2: SquareCoords) -> bool {
+        if square1.x1 > square2.x2
+            || square1.x2 < square2.x1
+            || square1.y1 > square2.y2
+            || square1.y2 < square2.y1
+        {
             return false;
         }
-
         true
     }
 
@@ -392,7 +406,10 @@ impl Grid {
                 };
 
                 // check if cell is empty
-                if self.cells[street_id as usize][start as usize].obu_id.is_none() {
+                if self.cells[street_id as usize][start as usize]
+                    .obu_id
+                    .is_none()
+                {
                     // insert obu
                     self.cells[street_id as usize][start as usize].obu_id = Some(obu_id);
                     return Some(Coordinate {
@@ -427,12 +444,20 @@ impl Grid {
     /**
      * Print grid stats
      */
-    pub fn print_stats(&self) {
+    pub fn print_stats(&self, max_obus: Option<u32>) {
         println!("--- Grid Stats ---");
         println!("Block size: {}", self.block_size);
         println!("Blocks per street: {}", self.blocks_per_street);
         println!("Dimension: {}x{}", self.dimension, self.dimension);
         println!("Number of street cells: {}", self.street_cells);
+        // if max_obus is not None, print percentage of occupied street cells
+        if let Some(max_obus) = max_obus {
+            println!(
+                "Occupied street cells: {} ({:.2}%)",
+                max_obus,
+                (max_obus as f32 / self.street_cells as f32) * 100.0
+            );
+        }
     }
 }
 
@@ -451,7 +476,6 @@ mod tests {
      */
     #[test]
     fn test_grid_creation() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -488,7 +512,6 @@ mod tests {
 
         // check street cells
         assert_eq!(grid.street_cells, 64);
-
     }
 
     /**
@@ -496,7 +519,6 @@ mod tests {
      */
     #[test]
     fn test_street_identification() {
-        
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -507,10 +529,10 @@ mod tests {
         // check if row/column 0 is a street
         assert_eq!(grid.is_street(0), true);
 
-        // check if row/column 1 is a street
+        // check if row/column 1 is not a street
         assert_eq!(grid.is_street(1), false);
 
-        // check if row/column 2 is a street
+        // check if row/column 2 is not a street
         assert_eq!(grid.is_street(2), false);
 
         // check if row/column 3 is a street
@@ -522,7 +544,6 @@ mod tests {
      */
     #[test]
     fn test_flow_direction() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -548,7 +569,6 @@ mod tests {
      */
     #[test]
     fn test_next_coordinates() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -592,7 +612,6 @@ mod tests {
      */
     #[test]
     fn test_stored_next_coordinates() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -638,7 +657,6 @@ mod tests {
      */
     #[test]
     fn test_get_next_coordinates() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -682,7 +700,6 @@ mod tests {
      */
     #[test]
     fn test_obu_insertion() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -697,7 +714,7 @@ mod tests {
         for _i in 0..8 {
             match grid.insert_obu(obu_id) {
                 Some(coordinate) => {
-                    obus.push(OnBoardUnit::new(obu_id, coordinate, 0.0, false));
+                    obus.push(OnBoardUnit::new(obu_id, coordinate, 0, 0.0, 0.0, false, 0));
                     obu_id += 1;
                 }
                 None => {
@@ -752,7 +769,6 @@ mod tests {
      */
     #[test]
     fn test_get_possible_moves() {
-
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -783,7 +799,6 @@ mod tests {
      */
     #[test]
     fn test_square_coords() {
-        
         let params = GridParams {
             blocks_per_street: 3,
             block_size: 2,
@@ -791,19 +806,19 @@ mod tests {
 
         let grid = Grid::new(params);
 
-        let square_coords = grid.get_square_cords(Coordinate { x: 0, y: 0 }, 5);
+        let square_coords = grid.get_square_coords(Coordinate { x: 0, y: 0 }, 5);
         assert_eq!(square_coords.x1, 0);
         assert_eq!(square_coords.y1, 0);
         assert_eq!(square_coords.x2, 4);
         assert_eq!(square_coords.y2, 4);
 
-        let square_coords = grid.get_square_cords(Coordinate { x: 3, y: 3 }, 3);
+        let square_coords = grid.get_square_coords(Coordinate { x: 3, y: 3 }, 3);
         assert_eq!(square_coords.x1, 1);
         assert_eq!(square_coords.y1, 1);
         assert_eq!(square_coords.x2, 5);
         assert_eq!(square_coords.y2, 5);
 
-        let square_coords = grid.get_square_cords(Coordinate { x: 9, y: 9 }, 5);
+        let square_coords = grid.get_square_coords(Coordinate { x: 9, y: 9 }, 5);
         assert_eq!(square_coords.x1, 5);
         assert_eq!(square_coords.y1, 5);
         assert_eq!(square_coords.x2, 9);
@@ -815,7 +830,6 @@ mod tests {
      */
     #[test]
     fn test_overlaping_squares() {
-
         let square_1 = SquareCoords {
             x1: 0,
             y1: 0,
@@ -828,7 +842,7 @@ mod tests {
             x2: 7,
             y2: 7,
         };
-        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), true);
+        assert_eq!(Grid::check_overlapping_squares(square_1, square_2), true);
 
         let square_1 = SquareCoords {
             x1: 10,
@@ -842,7 +856,7 @@ mod tests {
             x2: 12,
             y2: 11,
         };
-        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), true);
+        assert_eq!(Grid::check_overlapping_squares(square_1, square_2), true);
     }
 
     /**
@@ -850,7 +864,6 @@ mod tests {
      */
     #[test]
     fn test_non_overlaping_squares() {
-
         let square_1 = SquareCoords {
             x1: 0,
             y1: 0,
@@ -863,7 +876,7 @@ mod tests {
             x2: 9,
             y2: 9,
         };
-        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), false);
+        assert_eq!(Grid::check_overlapping_squares(square_1, square_2), false);
 
         let square_1 = SquareCoords {
             x1: 15,
@@ -877,6 +890,6 @@ mod tests {
             x2: 14,
             y2: 14,
         };
-        assert_eq!(Grid::check_overlaping_squares(square_1, square_2), false);
+        assert_eq!(Grid::check_overlapping_squares(square_1, square_2), false);
     }
 }
