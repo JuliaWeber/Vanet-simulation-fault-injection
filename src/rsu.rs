@@ -1,23 +1,24 @@
 use crate::comms::{Message, NeighborEntry};
-use crate::grid::{Coordinate, SquareCoords};
+use crate::grid::Coordinate;
 use crate::simulator::NodeType;
 
 pub struct RoadSideUnit {
     id: u32,
     coordinate: Coordinate,
-    covered_area: SquareCoords,
     neighbors: Vec<NeighborEntry>,
 }
 
+/**
+ * RoadSideUnit implementation
+ */
 impl RoadSideUnit {
     /**
      * Create a new RoadSideUnit
      */
-    pub fn new(id: u32, coordinate: Coordinate, covered_area: SquareCoords) -> RoadSideUnit {
+    pub fn new(id: u32, coordinate: Coordinate) -> RoadSideUnit {
         RoadSideUnit {
             id,
             coordinate,
-            covered_area,
             neighbors: Vec::new(),
         }
     }
@@ -37,13 +38,6 @@ impl RoadSideUnit {
     }
 
     /**
-     * Get the covered area of the RoadSideUnit
-     */
-    pub fn get_covered_area(&self) -> SquareCoords {
-        self.covered_area.clone()
-    }
-
-    /**
      * Get a message from this rsu
      */
     pub fn get_message(&self) -> Option<Message> {
@@ -54,15 +48,20 @@ impl RoadSideUnit {
      * Receive a message from the ether
      */
     pub fn receive_message(&mut self, message: Message) {
+        // Check the type of the `Message` instance.
         match message.origin_type {
+            // If the `Message` instance was sent by an OBU node, add the sender to the `neighbors` vector.
             NodeType::OBU => {
+                // Create a new `NeighborEntry` instance.
                 let neighbor = NeighborEntry {
                     id: message.origin_id,
                     coordinate: message.coordinate,
                 };
 
+                // Add the `NeighborEntry` instance to the `neighbors` vector.
                 self.neighbors.push(neighbor);
             }
+            // If the `Message` instance was sent by any other type of node, do nothing.
             _ => {}
         }
     }
